@@ -1,6 +1,6 @@
 diff -r 555c45b3456e src/cpu/x86/vm/c1_Defs_x86.hpp
 --- a/src/cpu/x86/vm/c1_Defs_x86.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/cpu/x86/vm/c1_Defs_x86.hpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/cpu/x86/vm/c1_Defs_x86.hpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -59,6 +59,9 @@
    pd_nof_cpu_regs_linearscan = pd_nof_cpu_regs_frame_map, // number of registers visible to linear scan
    pd_nof_fpu_regs_linearscan = pd_nof_fpu_regs_frame_map, // number of registers visible to linear scan
@@ -13,7 +13,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Defs_x86.hpp
    pd_first_byte_reg = NOT_LP64(2) LP64_ONLY(0),
 diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/cpu/x86/vm/c1_Greedy_x86.cpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/cpu/x86/vm/c1_Greedy_x86.cpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -0,0 +1,1242 @@
 +/*
 + * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
@@ -1259,7 +1259,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.hpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/cpu/x86/vm/c1_Greedy_x86.hpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/cpu/x86/vm/c1_Greedy_x86.hpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -0,0 +1,191 @@
 +/*
 + * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
@@ -1454,7 +1454,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.hpp
 +#endif // CPU_X86_VM_C1_GREEDY_X86_HPP
 diff -r 555c45b3456e src/share/vm/c1/c1_CFGPrinter.hpp
 --- a/src/share/vm/c1/c1_CFGPrinter.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_CFGPrinter.hpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/share/vm/c1/c1_CFGPrinter.hpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -35,6 +35,7 @@
  
  class CFGPrinterOutput;
@@ -1463,17 +1463,19 @@ diff -r 555c45b3456e src/share/vm/c1/c1_CFGPrinter.hpp
  
  class CFGPrinter : public AllStatic {
  private:
-@@ -47,6 +48,7 @@
+@@ -47,6 +48,9 @@
    static void print_cfg(BlockList* blocks, const char* name, bool do_print_HIR, bool do_print_LIR);
    static void print_cfg(IR* blocks, const char* name, bool do_print_HIR, bool do_print_LIR);
    static void print_intervals(IntervalList* intervals, const char* name);
-+  static void print_intervals(GreedyIntervalList* intervals, const char* name);
++  static void print_intervals(GreedyIntervalList* intervals, const char* name) {
++    tty->print_cr("Unimplemented");
++  };
  };
  
  #endif
 diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/share/vm/c1/c1_Greedy.cpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/share/vm/c1/c1_Greedy.cpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -0,0 +1,6724 @@
 +/*
 + * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
@@ -8201,7 +8203,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +#endif // #ifndef PRODUCT
 diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/share/vm/c1/c1_Greedy.hpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/share/vm/c1/c1_Greedy.hpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -0,0 +1,990 @@
 +/*
 + * Copyright (c) 2005, 2012, Oracle and/or its affiliates. All rights reserved.
@@ -9195,7 +9197,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +#endif // SHARE_VM_C1_C1_GREEDY_HPP
 diff -r 555c45b3456e src/share/vm/c1/c1_IR.hpp
 --- a/src/share/vm/c1/c1_IR.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_IR.hpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/share/vm/c1/c1_IR.hpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -247,6 +247,7 @@
  
  class CodeEmitInfo: public CompilationResourceObj {
@@ -9221,7 +9223,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_IR.hpp
    static void print(BlockBegin* start, bool cfg_only, bool live_only = false) PRODUCT_RETURN;
 diff -r 555c45b3456e src/share/vm/c1/c1_Instruction.hpp
 --- a/src/share/vm/c1/c1_Instruction.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_Instruction.hpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/share/vm/c1/c1_Instruction.hpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -1607,6 +1607,7 @@
    int        _bci;                               // start-bci of block
    int        _depth_first_number;                // number of this block in a depth-first ordering
@@ -9267,7 +9269,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Instruction.hpp
    void set(Flag f)                               { _flags |= f; }
 diff -r 555c45b3456e src/share/vm/c1/c1_globals.hpp
 --- a/src/share/vm/c1/c1_globals.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_globals.hpp	Sat Mar 24 11:04:51 2018 +0800
++++ b/src/share/vm/c1/c1_globals.hpp	Sat Mar 24 12:06:20 2018 +0800
 @@ -227,6 +227,21 @@
                                                                              \
    develop(bool, CountLinearScan, false,                                     \
