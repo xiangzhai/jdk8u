@@ -1,6 +1,6 @@
-diff -r 555c45b3456e src/cpu/x86/vm/c1_Defs_x86.hpp
---- a/src/cpu/x86/vm/c1_Defs_x86.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/cpu/x86/vm/c1_Defs_x86.hpp	Sat Mar 24 12:06:20 2018 +0800
+diff -r 33a61051088d src/cpu/x86/vm/c1_Defs_x86.hpp
+--- a/src/cpu/x86/vm/c1_Defs_x86.hpp	Sat Mar 24 12:18:54 2018 +0800
++++ b/src/cpu/x86/vm/c1_Defs_x86.hpp	Sat Mar 24 20:57:05 2018 +0800
 @@ -59,6 +59,9 @@
    pd_nof_cpu_regs_linearscan = pd_nof_cpu_regs_frame_map, // number of registers visible to linear scan
    pd_nof_fpu_regs_linearscan = pd_nof_fpu_regs_frame_map, // number of registers visible to linear scan
@@ -11,10 +11,10 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Defs_x86.hpp
    pd_first_cpu_reg = 0,
    pd_last_cpu_reg = NOT_LP64(5) LP64_ONLY(11),
    pd_first_byte_reg = NOT_LP64(2) LP64_ONLY(0),
-diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
+diff -r 33a61051088d src/cpu/x86/vm/c1_Greedy_x86.cpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/cpu/x86/vm/c1_Greedy_x86.cpp	Sat Mar 24 12:06:20 2018 +0800
-@@ -0,0 +1,1242 @@
++++ b/src/cpu/x86/vm/c1_Greedy_x86.cpp	Sat Mar 24 20:57:05 2018 +0800
+@@ -0,0 +1,1245 @@
 +/*
 + * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
 + * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -44,6 +44,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +#include "c1/c1_Greedy.hpp"
 +#include "utilities/bitMap.inline.hpp"
 +
++namespace greedy {
 +
 +//----------------------------------------------------------------------
 +// Allocation of FPU stack slots (Intel x86 only)
@@ -53,19 +54,19 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  // First compute which FPU registers are live at the start of each basic block
 +  // (To minimize the amount of work we have to do if we have to merge FPU stacks)
 +  if (ComputeExactFPURegisterUsage) {
-+    GreedyInterval* intervals_in_register, *intervals_in_memory;
++    Interval* intervals_in_register, *intervals_in_memory;
 +    create_unhandled_lists(&intervals_in_register, &intervals_in_memory, is_in_fpu_register, NULL);
 +
 +    // ignore memory intervals by overwriting intervals_in_memory
 +    // the dummy interval is needed to enforce the walker to walk until the given id:
 +    // without it, the walker stops when the unhandled-list is empty -> live information
 +    // beyond this point would be incorrect.
-+    GreedyInterval* dummy_interval = new GreedyInterval(any_reg);
++    Interval* dummy_interval = new Interval(any_reg);
 +    dummy_interval->add_range(max_jint - 2, max_jint - 1);
-+    dummy_interval->set_next(GreedyInterval::end());
++    dummy_interval->set_next(Interval::end());
 +    intervals_in_memory = dummy_interval;
 +
-+    GreedyIntervalWalker iw(this, intervals_in_register, intervals_in_memory);
++    IntervalWalker iw(this, intervals_in_register, intervals_in_memory);
 +
 +    const int num_blocks = block_count();
 +    for (int i = 0; i < num_blocks; i++) {
@@ -91,8 +92,8 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +        assert(iw.current_position() == id, "did not walk completely to id");
 +
 +        // Only consider FPU values in registers
-+        GreedyInterval* interval = iw.active_first(fixedKind);
-+        while (interval != GreedyInterval::end()) {
++        Interval* interval = iw.active_first(fixedKind);
++        while (interval != Interval::end()) {
 +          int reg = interval->assigned_reg();
 +          assert(reg >= pd_first_fpu_reg && reg <= pd_last_fpu_reg, "no fpu register");
 +          assert(interval->assigned_regHi() == -1, "must not have hi register (doubles stored in one register)");
@@ -119,14 +120,14 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +    }
 +  }
 +
-+  GreedyFpuStackAllocator alloc(ir()->compilation(), this);
++  FpuStackAllocator alloc(ir()->compilation(), this);
 +  _fpu_stack_allocator = &alloc;
 +  alloc.allocate();
 +  _fpu_stack_allocator = NULL;
 +}
 +
 +
-+GreedyFpuStackAllocator::GreedyFpuStackAllocator(Compilation* compilation, Greedy* allocator)
++FpuStackAllocator::FpuStackAllocator(Compilation* compilation, Greedy* allocator)
 +  : _compilation(compilation)
 +  , _lir(NULL)
 +  , _pos(-1)
@@ -135,7 +136,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  , _temp_sim(compilation)
 +{}
 +
-+void GreedyFpuStackAllocator::allocate() {
++void FpuStackAllocator::allocate() {
 +  int num_blocks = allocator()->block_count();
 +  for (int i = 0; i < num_blocks; i++) {
 +    // Set up to process block
@@ -175,7 +176,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  }
 +}
 +
-+void GreedyFpuStackAllocator::allocate_block(BlockBegin* block) {
++void FpuStackAllocator::allocate_block(BlockBegin* block) {
 +  bool processed_merge = false;
 +  LIR_OpList* insts = block->lir()->instructions_list();
 +  set_lir(block->lir());
@@ -228,7 +229,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +
-+void GreedyFpuStackAllocator::compute_debug_information(LIR_Op* op) {
++void FpuStackAllocator::compute_debug_information(LIR_Op* op) {
 +  if (!_debug_information_computed && op->id() != -1 && allocator()->has_info(op->id())) {
 +    visitor.visit(op);
 +
@@ -256,7 +257,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  _debug_information_computed = true;
 +}
 +
-+void GreedyFpuStackAllocator::allocate_exception_handler(XHandler* xhandler) {
++void FpuStackAllocator::allocate_exception_handler(XHandler* xhandler) {
 +  if (!sim()->is_empty()) {
 +    LIR_List* old_lir = lir();
 +    int old_pos = pos();
@@ -329,17 +330,17 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +
-+int GreedyFpuStackAllocator::fpu_num(LIR_Opr opr) {
++int FpuStackAllocator::fpu_num(LIR_Opr opr) {
 +  assert(opr->is_fpu_register() && !opr->is_xmm_register(), "shouldn't call this otherwise");
 +  return opr->is_single_fpu() ? opr->fpu_regnr() : opr->fpu_regnrLo();
 +}
 +
-+int GreedyFpuStackAllocator::tos_offset(LIR_Opr opr) {
++int FpuStackAllocator::tos_offset(LIR_Opr opr) {
 +  return sim()->offset_from_tos(fpu_num(opr));
 +}
 +
 +
-+LIR_Opr GreedyFpuStackAllocator::to_fpu_stack(LIR_Opr opr) {
++LIR_Opr FpuStackAllocator::to_fpu_stack(LIR_Opr opr) {
 +  assert(opr->is_fpu_register() && !opr->is_xmm_register(), "shouldn't call this otherwise");
 +
 +  int stack_offset = tos_offset(opr);
@@ -351,7 +352,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  }
 +}
 +
-+LIR_Opr GreedyFpuStackAllocator::to_fpu_stack_top(LIR_Opr opr, bool dont_check_offset) {
++LIR_Opr FpuStackAllocator::to_fpu_stack_top(LIR_Opr opr, bool dont_check_offset) {
 +  assert(opr->is_fpu_register() && !opr->is_xmm_register(), "shouldn't call this otherwise");
 +  assert(dont_check_offset || tos_offset(opr) == 0, "operand is not on stack top");
 +
@@ -366,13 +367,13 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +
 +
 +
-+void GreedyFpuStackAllocator::insert_op(LIR_Op* op) {
++void FpuStackAllocator::insert_op(LIR_Op* op) {
 +  lir()->insert_before(pos(), op);
 +  set_pos(1 + pos());
 +}
 +
 +
-+void GreedyFpuStackAllocator::insert_exchange(int offset) {
++void FpuStackAllocator::insert_exchange(int offset) {
 +  if (offset > 0) {
 +    LIR_Op1* fxch_op = new LIR_Op1(lir_fxch, LIR_OprFact::intConst(offset), LIR_OprFact::illegalOpr);
 +    insert_op(fxch_op);
@@ -387,12 +388,12 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  }
 +}
 +
-+void GreedyFpuStackAllocator::insert_exchange(LIR_Opr opr) {
++void FpuStackAllocator::insert_exchange(LIR_Opr opr) {
 +  insert_exchange(tos_offset(opr));
 +}
 +
 +
-+void GreedyFpuStackAllocator::insert_free(int offset) {
++void FpuStackAllocator::insert_free(int offset) {
 +  // move stack slot to the top of stack and then pop it
 +  insert_exchange(offset);
 +
@@ -408,21 +409,21 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +
-+void GreedyFpuStackAllocator::insert_free_if_dead(LIR_Opr opr) {
++void FpuStackAllocator::insert_free_if_dead(LIR_Opr opr) {
 +  if (sim()->contains(fpu_num(opr))) {
 +    int res_slot = tos_offset(opr);
 +    insert_free(res_slot);
 +  }
 +}
 +
-+void GreedyFpuStackAllocator::insert_free_if_dead(LIR_Opr opr, LIR_Opr ignore) {
++void FpuStackAllocator::insert_free_if_dead(LIR_Opr opr, LIR_Opr ignore) {
 +  if (fpu_num(opr) != fpu_num(ignore) && sim()->contains(fpu_num(opr))) {
 +    int res_slot = tos_offset(opr);
 +    insert_free(res_slot);
 +  }
 +}
 +
-+void GreedyFpuStackAllocator::insert_copy(LIR_Opr from, LIR_Opr to) {
++void FpuStackAllocator::insert_copy(LIR_Opr from, LIR_Opr to) {
 +  int offset = tos_offset(from);
 +  LIR_Op1* fld = new LIR_Op1(lir_fld, LIR_OprFact::intConst(offset), LIR_OprFact::illegalOpr);
 +  insert_op(fld);
@@ -436,15 +437,15 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +#endif
 +}
 +
-+void GreedyFpuStackAllocator::do_rename(LIR_Opr from, LIR_Opr to) {
++void FpuStackAllocator::do_rename(LIR_Opr from, LIR_Opr to) {
 +  sim()->rename(fpu_num(from), fpu_num(to));
 +}
 +
-+void GreedyFpuStackAllocator::do_push(LIR_Opr opr) {
++void FpuStackAllocator::do_push(LIR_Opr opr) {
 +  sim()->push(fpu_num(opr));
 +}
 +
-+void GreedyFpuStackAllocator::pop_if_last_use(LIR_Op* op, LIR_Opr opr) {
++void FpuStackAllocator::pop_if_last_use(LIR_Op* op, LIR_Opr opr) {
 +  assert(op->fpu_pop_count() == 0, "fpu_pop_count alredy set");
 +  assert(tos_offset(opr) == 0, "can only pop stack top");
 +
@@ -454,7 +455,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  }
 +}
 +
-+void GreedyFpuStackAllocator::pop_always(LIR_Op* op, LIR_Opr opr) {
++void FpuStackAllocator::pop_always(LIR_Op* op, LIR_Opr opr) {
 +  assert(op->fpu_pop_count() == 0, "fpu_pop_count alredy set");
 +  assert(tos_offset(opr) == 0, "can only pop stack top");
 +
@@ -462,7 +463,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  sim()->pop();
 +}
 +
-+void GreedyFpuStackAllocator::clear_fpu_stack(LIR_Opr preserve) {
++void FpuStackAllocator::clear_fpu_stack(LIR_Opr preserve) {
 +  int result_stack_size = (preserve->is_fpu_register() && !preserve->is_xmm_register() ? 1 : 0);
 +  while (sim()->stack_size() > result_stack_size) {
 +    assert(!sim()->slot_is_empty(0), "not allowed");
@@ -477,7 +478,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +
-+void GreedyFpuStackAllocator::handle_op1(LIR_Op1* op1) {
++void FpuStackAllocator::handle_op1(LIR_Op1* op1) {
 +  LIR_Opr in  = op1->in_opr();
 +  LIR_Opr res = op1->result_opr();
 +
@@ -672,7 +673,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  op1->set_result_opr(new_res);
 +}
 +
-+void GreedyFpuStackAllocator::handle_op2(LIR_Op2* op2) {
++void FpuStackAllocator::handle_op2(LIR_Op2* op2) {
 +  LIR_Opr left  = op2->in_opr1();
 +  if (!left->is_float_kind()) {
 +    return;
@@ -916,7 +917,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  op2->set_result_opr(new_res);
 +}
 +
-+void GreedyFpuStackAllocator::handle_opCall(LIR_OpCall* opCall) {
++void FpuStackAllocator::handle_opCall(LIR_OpCall* opCall) {
 +  LIR_Opr res = opCall->result_opr();
 +
 +  // clear fpu-stack before call
@@ -934,7 +935,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +#ifndef PRODUCT
-+void GreedyFpuStackAllocator::check_invalid_lir_op(LIR_Op* op) {
++void FpuStackAllocator::check_invalid_lir_op(LIR_Op* op) {
 +  switch (op->code()) {
 +    case lir_24bit_FPU:
 +    case lir_reset_FPU:
@@ -945,14 +946,14 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +    case lir_fpop_raw:
 +    case lir_fxch:
 +    case lir_fld:
-+      assert(false, "operations only inserted by GreedyFpuStackAllocator");
++      assert(false, "operations only inserted by FpuStackAllocator");
 +      break;
 +  }
 +}
 +#endif
 +
 +
-+void GreedyFpuStackAllocator::merge_insert_add(LIR_List* instrs, FpuStackSim* cur_sim, int reg) {
++void FpuStackAllocator::merge_insert_add(LIR_List* instrs, FpuStackSim* cur_sim, int reg) {
 +  LIR_Op1* move = new LIR_Op1(lir_move, LIR_OprFact::doubleConst(0), LIR_OprFact::double_fpu(reg)->make_fpu_stack_offset());
 +
 +  instrs->instructions_list()->push(move);
@@ -967,7 +968,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  #endif
 +}
 +
-+void GreedyFpuStackAllocator::merge_insert_xchg(LIR_List* instrs, FpuStackSim* cur_sim, int slot) {
++void FpuStackAllocator::merge_insert_xchg(LIR_List* instrs, FpuStackSim* cur_sim, int slot) {
 +  assert(slot > 0, "no exchange necessary");
 +
 +  LIR_Op1* fxch = new LIR_Op1(lir_fxch, LIR_OprFact::intConst(slot));
@@ -981,7 +982,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  #endif
 +}
 +
-+void GreedyFpuStackAllocator::merge_insert_pop(LIR_List* instrs, FpuStackSim* cur_sim) {
++void FpuStackAllocator::merge_insert_pop(LIR_List* instrs, FpuStackSim* cur_sim) {
 +  int reg = cur_sim->get_slot(0);
 +
 +  LIR_Op* fpop = new LIR_Op0(lir_fpop_raw);
@@ -995,7 +996,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +  #endif
 +}
 +
-+bool GreedyFpuStackAllocator::merge_rename(FpuStackSim* cur_sim, FpuStackSim* sux_sim, int start_slot, int change_slot) {
++bool FpuStackAllocator::merge_rename(FpuStackSim* cur_sim, FpuStackSim* sux_sim, int start_slot, int change_slot) {
 +  int reg = cur_sim->get_slot(change_slot);
 +
 +  for (int slot = start_slot; slot >= 0; slot--) {
@@ -1017,7 +1018,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +
-+void GreedyFpuStackAllocator::merge_fpu_stack(LIR_List* instrs, FpuStackSim* cur_sim, FpuStackSim* sux_sim) {
++void FpuStackAllocator::merge_fpu_stack(LIR_List* instrs, FpuStackSim* cur_sim, FpuStackSim* sux_sim) {
 +#ifndef PRODUCT
 +  if (TraceFPUStack) {
 +    tty->cr();
@@ -1113,7 +1114,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +
-+void GreedyFpuStackAllocator::merge_cleanup_fpu_stack(LIR_List* instrs, FpuStackSim* cur_sim, BitMap& live_fpu_regs) {
++void FpuStackAllocator::merge_cleanup_fpu_stack(LIR_List* instrs, FpuStackSim* cur_sim, BitMap& live_fpu_regs) {
 +#ifndef PRODUCT
 +  if (TraceFPUStack) {
 +    tty->cr();
@@ -1153,7 +1154,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +}
 +
 +
-+bool GreedyFpuStackAllocator::merge_fpu_stack_with_successors(BlockBegin* block) {
++bool FpuStackAllocator::merge_fpu_stack_with_successors(BlockBegin* block) {
 +#ifndef PRODUCT
 +  if (TraceFPUStack) {
 +    tty->print_cr("Propagating FPU stack state for B%d at LIR_Op position %d to successors:",
@@ -1257,10 +1258,12 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.cpp
 +
 +  return changed;
 +}
-diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.hpp
++
++} // end namespace greedy
+diff -r 33a61051088d src/cpu/x86/vm/c1_Greedy_x86.hpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/cpu/x86/vm/c1_Greedy_x86.hpp	Sat Mar 24 12:06:20 2018 +0800
-@@ -0,0 +1,191 @@
++++ b/src/cpu/x86/vm/c1_Greedy_x86.hpp	Sat Mar 24 20:57:05 2018 +0800
+@@ -0,0 +1,193 @@
 +/*
 + * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 + * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -1287,6 +1290,8 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.hpp
 +
 +#ifndef CPU_X86_VM_C1_GREEDY_X86_HPP
 +#define CPU_X86_VM_C1_GREEDY_X86_HPP
++
++using namespace greedy;
 +
 +inline bool Greedy::is_processed_reg_num(int reg_num) {
 +#ifndef _LP64
@@ -1362,7 +1367,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.hpp
 +
 +// Implementation of GreedyWalker
 +
-+inline bool GreedyWalker::pd_init_regs_for_alloc(GreedyInterval* cur) {
++inline bool GreedyWalker::pd_init_regs_for_alloc(Interval* cur) {
 +  if (allocator()->gen()->is_vreg_flag_set(cur->reg_num(), LIRGenerator::byte_reg)) {
 +    assert(cur->type() != T_FLOAT && cur->type() != T_DOUBLE, "cpu regs only");
 +    _first_reg = pd_first_byte_reg;
@@ -1378,7 +1383,7 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.hpp
 +}
 +
 +
-+class GreedyFpuStackAllocator VALUE_OBJ_CLASS_SPEC {
++class FpuStackAllocator VALUE_OBJ_CLASS_SPEC {
 + private:
 +  Compilation* _compilation;
 +  Greedy* _allocator;
@@ -1447,36 +1452,38 @@ diff -r 555c45b3456e src/cpu/x86/vm/c1_Greedy_x86.hpp
 + public:
 +  LIR_Opr to_fpu_stack(LIR_Opr opr); // used by Greedy for creation of debug information
 +
-+  GreedyFpuStackAllocator(Compilation* compilation, Greedy* allocator);
++  FpuStackAllocator(Compilation* compilation, Greedy* allocator);
 +  void allocate();
 +};
 +
 +#endif // CPU_X86_VM_C1_GREEDY_X86_HPP
-diff -r 555c45b3456e src/share/vm/c1/c1_CFGPrinter.hpp
---- a/src/share/vm/c1/c1_CFGPrinter.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_CFGPrinter.hpp	Sat Mar 24 12:06:20 2018 +0800
-@@ -35,6 +35,7 @@
+diff -r 33a61051088d src/share/vm/c1/c1_CFGPrinter.hpp
+--- a/src/share/vm/c1/c1_CFGPrinter.hpp	Sat Mar 24 12:18:54 2018 +0800
++++ b/src/share/vm/c1/c1_CFGPrinter.hpp	Sat Mar 24 20:57:05 2018 +0800
+@@ -35,6 +35,9 @@
  
  class CFGPrinterOutput;
  class IntervalList;
-+class GreedyIntervalList;
++namespace greedy {
++class IntervalList;
++}
  
  class CFGPrinter : public AllStatic {
  private:
-@@ -47,6 +48,9 @@
+@@ -47,6 +50,9 @@
    static void print_cfg(BlockList* blocks, const char* name, bool do_print_HIR, bool do_print_LIR);
    static void print_cfg(IR* blocks, const char* name, bool do_print_HIR, bool do_print_LIR);
    static void print_intervals(IntervalList* intervals, const char* name);
-+  static void print_intervals(GreedyIntervalList* intervals, const char* name) {
++  static void print_intervals(greedy::IntervalList* intervals, const char* name) {
 +    tty->print_cr("Unimplemented");
 +  };
  };
  
  #endif
-diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
+diff -r 33a61051088d src/share/vm/c1/c1_Greedy.cpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/share/vm/c1/c1_Greedy.cpp	Sat Mar 24 12:06:20 2018 +0800
-@@ -0,0 +1,6724 @@
++++ b/src/share/vm/c1/c1_Greedy.cpp	Sat Mar 24 20:57:05 2018 +0800
+@@ -0,0 +1,6727 @@
 +/*
 + * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
 + * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -1527,6 +1534,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +# include "vmreg_ppc.inline.hpp"
 +#endif
 +
++namespace greedy {
 +
 +#ifndef PRODUCT
 +
@@ -1573,7 +1581,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 + , _max_spills(0)
 + , _unused_spill_slot(-1)
 + , _intervals(0)   // initialized later with correct length
-+ , _new_intervals_from_allocation(new GreedyIntervalList())
++ , _new_intervals_from_allocation(new IntervalList())
 + , _sorted_intervals(NULL)
 + , _needs_full_resort(false)
 + , _lir_ops(0)     // initialized later with correct length
@@ -1659,19 +1667,19 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// ********** functions for classification of intervals
 +
-+bool Greedy::is_precolored_interval(const GreedyInterval* i) {
++bool Greedy::is_precolored_interval(const Interval* i) {
 +  return i->reg_num() < Greedy::nof_regs;
 +}
 +
-+bool Greedy::is_virtual_interval(const GreedyInterval* i) {
++bool Greedy::is_virtual_interval(const Interval* i) {
 +  return i->reg_num() >= LIR_OprDesc::vreg_base;
 +}
 +
-+bool Greedy::is_precolored_cpu_interval(const GreedyInterval* i) {
++bool Greedy::is_precolored_cpu_interval(const Interval* i) {
 +  return i->reg_num() < Greedy::nof_cpu_regs;
 +}
 +
-+bool Greedy::is_virtual_cpu_interval(const GreedyInterval* i) {
++bool Greedy::is_virtual_cpu_interval(const Interval* i) {
 +#if defined(__SOFTFP__) || defined(E500V2)
 +  return i->reg_num() >= LIR_OprDesc::vreg_base;
 +#else
@@ -1679,11 +1687,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +#endif // __SOFTFP__ or E500V2
 +}
 +
-+bool Greedy::is_precolored_fpu_interval(const GreedyInterval* i) {
++bool Greedy::is_precolored_fpu_interval(const Interval* i) {
 +  return i->reg_num() >= Greedy::nof_cpu_regs && i->reg_num() < Greedy::nof_regs;
 +}
 +
-+bool Greedy::is_virtual_fpu_interval(const GreedyInterval* i) {
++bool Greedy::is_virtual_fpu_interval(const Interval* i) {
 +#if defined(__SOFTFP__) || defined(E500V2)
 +  return false;
 +#else
@@ -1691,12 +1699,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +#endif // __SOFTFP__ or E500V2
 +}
 +
-+bool Greedy::is_in_fpu_register(const GreedyInterval* i) {
++bool Greedy::is_in_fpu_register(const Interval* i) {
 +  // fixed intervals not needed for FPU stack allocation
 +  return i->reg_num() >= nof_regs && pd_first_fpu_reg <= i->assigned_reg() && i->assigned_reg() <= pd_last_fpu_reg;
 +}
 +
-+bool Greedy::is_oop_interval(const GreedyInterval* i) {
++bool Greedy::is_oop_interval(const Interval* i) {
 +  // fixed intervals never contain oops
 +  return i->reg_num() >= nof_regs && i->type() == T_OBJECT;
 +}
@@ -1742,7 +1750,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return result;
 +}
 +
-+void Greedy::assign_spill_slot(GreedyInterval* it) {
++void Greedy::assign_spill_slot(Interval* it) {
 +  // assign the canonical spill slot of the parent (if a part of the interval
 +  // is already spilled) or allocate a new spill slot
 +  if (it->canonical_spill_slot() >= 0) {
@@ -1762,10 +1770,10 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// create a new interval with a predefined reg_num
 +// (only used for parent intervals that are created during the building phase)
-+GreedyInterval* Greedy::create_interval(int reg_num) {
++Interval* Greedy::create_interval(int reg_num) {
 +  assert(_intervals.at(reg_num) == NULL, "overwriting exisiting interval");
 +
-+  GreedyInterval* interval = new GreedyInterval(reg_num);
++  Interval* interval = new Interval(reg_num);
 +  _intervals.at_put(reg_num, interval);
 +
 +  // assign register number for precolored intervals
@@ -1777,14 +1785,14 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// assign a new reg_num to the interval and append it to the list of intervals
 +// (only used for child intervals that are created during register allocation)
-+void Greedy::append_interval(GreedyInterval* it) {
++void Greedy::append_interval(Interval* it) {
 +  it->set_reg_num(_intervals.length());
 +  _intervals.append(it);
 +  _new_intervals_from_allocation->append(it);
 +}
 +
 +// copy the vreg-flags if an interval is split
-+void Greedy::copy_register_flags(GreedyInterval* from, GreedyInterval* to) {
++void Greedy::copy_register_flags(Interval* from, Interval* to) {
 +  if (gen()->is_vreg_flag_set(from->reg_num(), LIRGenerator::byte_reg)) {
 +    gen()->set_vreg_flag(to->reg_num(), LIRGenerator::byte_reg);
 +  }
@@ -1801,7 +1809,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +// eliminate moves from register to stack if stack slot is known to be correct
 +
 +// called during building of intervals
-+void Greedy::change_spill_definition_pos(GreedyInterval* interval, int def_pos) {
++void Greedy::change_spill_definition_pos(Interval* interval, int def_pos) {
 +  assert(interval->is_split_parent(), "can only be called for split parents");
 +
 +  switch (interval->spill_state()) {
@@ -1832,7 +1840,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +// called during register allocation
-+void Greedy::change_spill_state(GreedyInterval* interval, int spill_pos) {
++void Greedy::change_spill_state(Interval* interval, int spill_pos) {
 +  switch (interval->spill_state()) {
 +    case oneDefinitionFound: {
 +      int def_loop_depth = block_of_op_with_id(interval->spill_definition_pos())->loop_depth();
@@ -1871,7 +1879,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+bool Greedy::must_store_at_definition(const GreedyInterval* i) {
++bool Greedy::must_store_at_definition(const Interval* i) {
 +  return i->is_split_parent() && i->spill_state() == storeAtDefinition;
 +}
 +
@@ -1881,15 +1889,15 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  TRACE_GREEDY(3, tty->print_cr("***** Eliminating unnecessary spill moves"));
 +
 +  // collect all intervals that must be stored after their definion.
-+  // the list is sorted by GreedyInterval::spill_definition_pos
-+  GreedyInterval* interval;
-+  GreedyInterval* temp_list;
++  // the list is sorted by Interval::spill_definition_pos
++  Interval* interval;
++  Interval* temp_list;
 +  create_unhandled_lists(&interval, &temp_list, must_store_at_definition, NULL);
 +
 +#ifdef ASSERT
-+  GreedyInterval* prev = NULL;
-+  GreedyInterval* temp = interval;
-+  while (temp != GreedyInterval::end()) {
++  Interval* prev = NULL;
++  Interval* temp = interval;
++  while (temp != Interval::end()) {
 +    assert(temp->spill_definition_pos() > 0, "invalid spill definition pos");
 +    if (prev != NULL) {
 +      assert(temp->from() >= prev->from(), "intervals not sorted");
@@ -1927,7 +1935,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +        assert(op->as_Op1()->result_opr()->is_virtual(), "Greedy inserts only moves to virtual registers");
 +
 +        LIR_Op1* op1 = (LIR_Op1*)op;
-+        GreedyInterval* interval = interval_at(op1->result_opr()->vreg_number());
++        Interval* interval = interval_at(op1->result_opr()->vreg_number());
 +
 +        if (interval->assigned_reg() >= Greedy::nof_regs && interval->always_in_memory()) {
 +          // move target is a stack slot that is always correct, so eliminate instruction
@@ -1937,10 +1945,10 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +      } else {
 +        // insert move from register to stack just after the beginning of the interval
-+        assert(interval == GreedyInterval::end() || interval->spill_definition_pos() >= op_id, "invalid order");
-+        assert(interval == GreedyInterval::end() || (interval->is_split_parent() && interval->spill_state() == storeAtDefinition), "invalid interval");
++        assert(interval == Interval::end() || interval->spill_definition_pos() >= op_id, "invalid order");
++        assert(interval == Interval::end() || (interval->is_split_parent() && interval->spill_state() == storeAtDefinition), "invalid interval");
 +
-+        while (interval != GreedyInterval::end() && interval->spill_definition_pos() == op_id) {
++        while (interval != Interval::end() && interval->spill_definition_pos() == op_id) {
 +          if (!has_new) {
 +            // prepare insertion buffer (appended when all instructions of the block are processed)
 +            insertion_buffer.init(block->lir());
@@ -1965,7 +1973,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +  } // end of block iteration
 +
-+  assert(interval == GreedyInterval::end(), "missed an interval");
++  assert(interval == Interval::end(), "missed an interval");
 +}
 +
 +
@@ -2357,7 +2365,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +// ********** Phase 4: build intervals
 +// (fills the list _intervals)
 +
-+void Greedy::add_use(Value value, int from, int to, GreedyIntervalUseKind use_kind) {
++void Greedy::add_use(Value value, int from, int to, IntervalUseKind use_kind) {
 +  assert(!value->type()->is_illegal(), "if this value is used by the interpreter it shouldn't be of indeterminate type");
 +  LIR_Opr opr = value->operand();
 +  Constant* con = value->as_Constant();
@@ -2369,7 +2377,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void Greedy::add_def(LIR_Opr opr, int def_pos, GreedyIntervalUseKind use_kind) {
++void Greedy::add_def(LIR_Opr opr, int def_pos, IntervalUseKind use_kind) {
 +  TRACE_GREEDY(2, tty->print(" def "); opr->print(tty); tty->print_cr(" def_pos %d (%d)", def_pos, use_kind));
 +  assert(opr->is_register(), "should not be called otherwise");
 +
@@ -2389,7 +2397,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void Greedy::add_use(LIR_Opr opr, int from, int to, GreedyIntervalUseKind use_kind) {
++void Greedy::add_use(LIR_Opr opr, int from, int to, IntervalUseKind use_kind) {
 +  TRACE_GREEDY(2, tty->print(" use "); opr->print(tty); tty->print_cr(" from %d to %d (%d)", from, to, use_kind));
 +  assert(opr->is_register(), "should not be called otherwise");
 +
@@ -2409,7 +2417,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void Greedy::add_temp(LIR_Opr opr, int temp_pos, GreedyIntervalUseKind use_kind) {
++void Greedy::add_temp(LIR_Opr opr, int temp_pos, IntervalUseKind use_kind) {
 +  TRACE_GREEDY(2, tty->print(" temp "); opr->print(tty); tty->print_cr(" temp_pos %d (%d)", temp_pos, use_kind));
 +  assert(opr->is_register(), "should not be called otherwise");
 +
@@ -2430,8 +2438,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void Greedy::add_def(int reg_num, int def_pos, GreedyIntervalUseKind use_kind, BasicType type) {
-+  GreedyInterval* interval = interval_at(reg_num);
++void Greedy::add_def(int reg_num, int def_pos, IntervalUseKind use_kind, BasicType type) {
++  Interval* interval = interval_at(reg_num);
 +  if (interval != NULL) {
 +    assert(interval->reg_num() == reg_num, "wrong interval");
 +
@@ -2439,7 +2447,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      interval->set_type(type);
 +    }
 +
-+    GreedyRange* r = interval->first();
++    Range* r = interval->first();
 +    if (r->from() <= def_pos) {
 +      // Update the starting point (when a range is first created for a use, its
 +      // start is the beginning of the current block until a def is encountered.)
@@ -2475,8 +2483,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void Greedy::add_use(int reg_num, int from, int to, GreedyIntervalUseKind use_kind, BasicType type) {
-+  GreedyInterval* interval = interval_at(reg_num);
++void Greedy::add_use(int reg_num, int from, int to, IntervalUseKind use_kind, BasicType type) {
++  Interval* interval = interval_at(reg_num);
 +  if (interval == NULL) {
 +    interval = create_interval(reg_num);
 +  }
@@ -2490,8 +2498,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  interval->add_use_pos(to, use_kind);
 +}
 +
-+void Greedy::add_temp(int reg_num, int temp_pos, GreedyIntervalUseKind use_kind, BasicType type) {
-+  GreedyInterval* interval = interval_at(reg_num);
++void Greedy::add_temp(int reg_num, int temp_pos, IntervalUseKind use_kind, BasicType type) {
++  Interval* interval = interval_at(reg_num);
 +  if (interval == NULL) {
 +    interval = create_interval(reg_num);
 +  }
@@ -2509,7 +2517,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +// the results of this functions are used for optimizing spilling and reloading
 +// if the functions return shouldHaveRegister and the interval is spilled,
 +// it is not reloaded to a register.
-+GreedyIntervalUseKind Greedy::use_kind_of_output_operand(LIR_Op* op, LIR_Opr opr) {
++IntervalUseKind Greedy::use_kind_of_output_operand(LIR_Op* op, LIR_Opr opr) {
 +  if (op->code() == lir_move) {
 +    assert(op->as_Op1() != NULL, "lir_move must be LIR_Op1");
 +    LIR_Op1* move = (LIR_Op1*)op;
@@ -2545,7 +2553,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return mustHaveRegister;
 +}
 +
-+GreedyIntervalUseKind Greedy::use_kind_of_input_operand(LIR_Op* op, LIR_Opr opr) {
++IntervalUseKind Greedy::use_kind_of_input_operand(LIR_Op* op, LIR_Opr opr) {
 +  if (op->code() == lir_move) {
 +    assert(op->as_Op1() != NULL, "lir_move must be LIR_Op1");
 +    LIR_Op1* move = (LIR_Op1*)op;
@@ -2674,7 +2682,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      TRACE_GREEDY(4, tty->print_cr("found move from stack slot %d to vreg %d", o->is_single_stack() ? o->single_stack_ix() : o->double_stack_ix(), reg_num(move->result_opr())));
 +#endif
 +
-+      GreedyInterval* interval = interval_at(reg_num(move->result_opr()));
++      Interval* interval = interval_at(reg_num(move->result_opr()));
 +
 +      int stack_slot = Greedy::nof_regs + (move->in_opr()->is_single_stack() ? move->in_opr()->single_stack_ix() : move->in_opr()->double_stack_ix());
 +      interval->set_canonical_spill_slot(stack_slot);
@@ -2716,8 +2724,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      LIR_Opr move_to = move->result_opr();
 +
 +      if (move_to->is_register() && move_from->is_register()) {
-+        GreedyInterval* from = interval_at(reg_num(move_from));
-+        GreedyInterval* to = interval_at(reg_num(move_to));
++        Interval* from = interval_at(reg_num(move_from));
++        Interval* to = interval_at(reg_num(move_to));
 +        if (from != NULL && to != NULL) {
 +          to->set_register_hint(from);
 +          TRACE_GREEDY(4, tty->print_cr("operation at op_id %d: added hint from interval %d to %d", move->id(), from->reg_num(), to->reg_num()));
@@ -2733,8 +2741,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      LIR_Opr move_to = cmove->result_opr();
 +
 +      if (move_to->is_register() && move_from->is_register()) {
-+        GreedyInterval* from = interval_at(reg_num(move_from));
-+        GreedyInterval* to = interval_at(reg_num(move_to));
++        Interval* from = interval_at(reg_num(move_from));
++        Interval* to = interval_at(reg_num(move_to));
 +        if (from != NULL && to != NULL) {
 +          to->set_register_hint(from);
 +          TRACE_GREEDY(4, tty->print_cr("operation at op_id %d: added hint from interval %d to %d", cmove->id(), from->reg_num(), to->reg_num()));
@@ -2751,7 +2759,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +  // initialize interval list with expected number of intervals
 +  // (32 is added to have some space for split children without having to resize the list)
-+  _intervals = GreedyIntervalList(num_virtual_regs() + 32);
++  _intervals = IntervalList(num_virtual_regs() + 32);
 +  // initialize all slots that are used by build_intervals
 +  _intervals.at_put_grow(num_virtual_regs() - 1, NULL, NULL);
 +
@@ -2900,7 +2908,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  // add the range [0, 1[ to all fixed intervals
 +  // -> the register allocator need not handle unhandled fixed intervals
 +  for (int n = 0; n < Greedy::nof_regs; n++) {
-+    GreedyInterval* interval = interval_at(n);
++    Interval* interval = interval_at(n);
 +    if (interval != NULL) {
 +      interval->add_range(0, 1);
 +    }
@@ -2910,7 +2918,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// ********** Phase 5: actual register allocation
 +
-+int Greedy::interval_cmp(GreedyInterval** a, GreedyInterval** b) {
++int Greedy::interval_cmp(Interval** a, Interval** b) {
 +  if (*a != NULL) {
 +    if (*b != NULL) {
 +      return (*a)->from() - (*b)->from();
@@ -2927,11 +2935,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +#ifndef PRODUCT
-+bool Greedy::is_sorted(GreedyIntervalArray* intervals) {
++bool Greedy::is_sorted(IntervalArray* intervals) {
 +  int from = -1;
 +  int i, j;
 +  for (i = 0; i < intervals->length(); i ++) {
-+    GreedyInterval* it = intervals->at(i);
++    Interval* it = intervals->at(i);
 +    if (it != NULL) {
 +      if (from > it->from()) {
 +        assert(false, "");
@@ -2967,7 +2975,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +#endif
 +
-+void Greedy::add_to_list(GreedyInterval** first, GreedyInterval** prev, GreedyInterval* interval) {
++void Greedy::add_to_list(Interval** first, Interval** prev, Interval* interval) {
 +  if (*prev != NULL) {
 +    (*prev)->set_next(interval);
 +  } else {
@@ -2976,14 +2984,14 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  *prev = interval;
 +}
 +
-+void Greedy::create_unhandled_lists(GreedyInterval** list1, GreedyInterval** list2, bool (is_list1)(const GreedyInterval* i), bool (is_list2)(const GreedyInterval* i)) {
++void Greedy::create_unhandled_lists(Interval** list1, Interval** list2, bool (is_list1)(const Interval* i), bool (is_list2)(const Interval* i)) {
 +  assert(is_sorted(_sorted_intervals), "interval list is not sorted");
 +
-+  *list1 = *list2 = GreedyInterval::end();
++  *list1 = *list2 = Interval::end();
 +
-+  GreedyInterval* list1_prev = NULL;
-+  GreedyInterval* list2_prev = NULL;
-+  GreedyInterval* v;
++  Interval* list1_prev = NULL;
++  Interval* list2_prev = NULL;
++  Interval* v;
 +
 +  const int n = _sorted_intervals->length();
 +  for (int i = 0; i < n; i++) {
@@ -2997,11 +3005,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +  }
 +
-+  if (list1_prev != NULL) list1_prev->set_next(GreedyInterval::end());
-+  if (list2_prev != NULL) list2_prev->set_next(GreedyInterval::end());
++  if (list1_prev != NULL) list1_prev->set_next(Interval::end());
++  if (list2_prev != NULL) list2_prev->set_next(Interval::end());
 +
-+  assert(list1_prev == NULL || list1_prev->next() == GreedyInterval::end(), "greedy list ends not with sentinel");
-+  assert(list2_prev == NULL || list2_prev->next() == GreedyInterval::end(), "greedy list ends not with sentinel");
++  assert(list1_prev == NULL || list1_prev->next() == Interval::end(), "greedy list ends not with sentinel");
++  assert(list2_prev == NULL || list2_prev->next() == Interval::end(), "greedy list ends not with sentinel");
 +}
 +
 +
@@ -3011,12 +3019,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  if (_needs_full_resort) {
 +    // There is no known reason why this should occur but just in case...
 +    assert(false, "should never occur");
-+    // Re-sort existing interval list because an GreedyInterval::from() has changed
++    // Re-sort existing interval list because an Interval::from() has changed
 +    _sorted_intervals->sort(interval_cmp);
 +    _needs_full_resort = false;
 +  }
 +
-+  GreedyIntervalList* unsorted_list = &_intervals;
++  IntervalList* unsorted_list = &_intervals;
 +  int unsorted_len = unsorted_list->length();
 +  int sorted_len = 0;
 +  int unsorted_idx;
@@ -3029,12 +3037,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      sorted_len++;
 +    }
 +  }
-+  GreedyIntervalArray* sorted_list = new GreedyIntervalArray(sorted_len);
++  IntervalArray* sorted_list = new IntervalArray(sorted_len);
 +
 +  // special sorting algorithm: the original interval-list is almost sorted,
 +  // only some intervals are swapped. So this is much faster than a complete QuickSort
 +  for (unsorted_idx = 0; unsorted_idx < unsorted_len; unsorted_idx++) {
-+    GreedyInterval* cur_interval = unsorted_list->at(unsorted_idx);
++    Interval* cur_interval = unsorted_list->at(unsorted_idx);
 +
 +    if (cur_interval != NULL) {
 +      int cur_from = cur_interval->from();
@@ -3062,13 +3070,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  TIME_GREEDY(timer_sort_intervals_after);
 +
 +  if (_needs_full_resort) {
-+    // Re-sort existing interval list because an GreedyInterval::from() has changed
++    // Re-sort existing interval list because an Interval::from() has changed
 +    _sorted_intervals->sort(interval_cmp);
 +    _needs_full_resort = false;
 +  }
 +
-+  GreedyIntervalArray* old_list      = _sorted_intervals;
-+  GreedyIntervalList*  new_list      = _new_intervals_from_allocation;
++  IntervalArray* old_list      = _sorted_intervals;
++  IntervalList*  new_list      = _new_intervals_from_allocation;
 +  int old_len = old_list->length();
 +  int new_len = new_list->length();
 +
@@ -3082,7 +3090,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  new_list->sort(interval_cmp);
 +
 +  // merge old and new list (both already sorted) into one combined list
-+  GreedyIntervalArray* combined_list = new GreedyIntervalArray(old_len + new_len);
++  IntervalArray* combined_list = new IntervalArray(old_len + new_len);
 +  int old_idx = 0;
 +  int new_idx = 0;
 +
@@ -3104,8 +3112,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +void Greedy::allocate_registers() {
 +  TIME_GREEDY(timer_allocate_registers);
 +
-+  GreedyInterval* precolored_cpu_intervals, *not_precolored_cpu_intervals;
-+  GreedyInterval* precolored_fpu_intervals, *not_precolored_fpu_intervals;
++  Interval* precolored_cpu_intervals, *not_precolored_cpu_intervals;
++  Interval* precolored_fpu_intervals, *not_precolored_fpu_intervals;
 +
 +  // allocate cpu registers
 +  create_unhandled_lists(&precolored_cpu_intervals, &not_precolored_cpu_intervals,
@@ -3133,37 +3141,37 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +// ********** Phase 6: resolve data flow
 +// (insert moves at edges between blocks if intervals have been split)
 +
-+// wrapper for GreedyInterval::split_child_at_op_id that performs a bailout in product mode
++// wrapper for Interval::split_child_at_op_id that performs a bailout in product mode
 +// instead of returning NULL
-+GreedyInterval* Greedy::split_child_at_op_id(GreedyInterval* interval, int op_id, LIR_OpVisitState::OprMode mode) {
-+  GreedyInterval* result = interval->split_child_at_op_id(op_id, mode);
++Interval* Greedy::split_child_at_op_id(Interval* interval, int op_id, LIR_OpVisitState::OprMode mode) {
++  Interval* result = interval->split_child_at_op_id(op_id, mode);
 +  if (result != NULL) {
 +    return result;
 +  }
 +
 +  assert(false, "must find an interval, but do a clean bailout in product mode");
-+  result = new GreedyInterval(LIR_OprDesc::vreg_base);
++  result = new Interval(LIR_OprDesc::vreg_base);
 +  result->assign_reg(0);
 +  result->set_type(T_INT);
 +  BAILOUT_("Greedy: interval is NULL", result);
 +}
 +
 +
-+GreedyInterval* Greedy::interval_at_block_begin(BlockBegin* block, int reg_num) {
++Interval* Greedy::interval_at_block_begin(BlockBegin* block, int reg_num) {
 +  assert(Greedy::nof_regs <= reg_num && reg_num < num_virtual_regs(), "register number out of bounds");
 +  assert(interval_at(reg_num) != NULL, "no interval found");
 +
 +  return split_child_at_op_id(interval_at(reg_num), block->first_lir_instruction_id(), LIR_OpVisitState::outputMode);
 +}
 +
-+GreedyInterval* Greedy::interval_at_block_end(BlockBegin* block, int reg_num) {
++Interval* Greedy::interval_at_block_end(BlockBegin* block, int reg_num) {
 +  assert(Greedy::nof_regs <= reg_num && reg_num < num_virtual_regs(), "register number out of bounds");
 +  assert(interval_at(reg_num) != NULL, "no interval found");
 +
 +  return split_child_at_op_id(interval_at(reg_num), block->last_lir_instruction_id() + 1, LIR_OpVisitState::outputMode);
 +}
 +
-+GreedyInterval* Greedy::interval_at_op_id(int reg_num, int op_id) {
++Interval* Greedy::interval_at_op_id(int reg_num, int op_id) {
 +  assert(Greedy::nof_regs <= reg_num && reg_num < num_virtual_regs(), "register number out of bounds");
 +  assert(interval_at(reg_num) != NULL, "no interval found");
 +
@@ -3171,7 +3179,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void Greedy::resolve_collect_mappings(BlockBegin* from_block, BlockBegin* to_block, GreedyMoveResolver &move_resolver) {
++void Greedy::resolve_collect_mappings(BlockBegin* from_block, BlockBegin* to_block, MoveResolver &move_resolver) {
 +  DEBUG_ONLY(move_resolver.check_empty());
 +
 +  const int num_regs = num_virtual_regs();
@@ -3183,8 +3191,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    assert(r < num_regs, "live information set for not exisiting interval");
 +    assert(from_block->live_out().at(r) && to_block->live_in().at(r), "interval not live at this edge");
 +
-+    GreedyInterval* from_interval = interval_at_block_end(from_block, r);
-+    GreedyInterval* to_interval = interval_at_block_begin(to_block, r);
++    Interval* from_interval = interval_at_block_end(from_block, r);
++    Interval* to_interval = interval_at_block_begin(to_block, r);
 +
 +    if (from_interval != to_interval && (from_interval->assigned_reg() != to_interval->assigned_reg() || from_interval->assigned_regHi() != to_interval->assigned_regHi())) {
 +      // need to insert move instruction
@@ -3194,7 +3202,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void Greedy::resolve_find_insert_pos(BlockBegin* from_block, BlockBegin* to_block, GreedyMoveResolver &move_resolver) {
++void Greedy::resolve_find_insert_pos(BlockBegin* from_block, BlockBegin* to_block, MoveResolver &move_resolver) {
 +  if (from_block->number_of_sux() <= 1) {
 +    TRACE_GREEDY(4, tty->print_cr("inserting moves at end of from_block B%d", from_block->block_id()));
 +
@@ -3232,7 +3240,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  TIME_GREEDY(timer_resolve_data_flow);
 +
 +  int num_blocks = block_count();
-+  GreedyMoveResolver move_resolver(this);
++  MoveResolver move_resolver(this);
 +  BitMap block_completed(num_blocks);  block_completed.clear();
 +  BitMap already_resolved(num_blocks); already_resolved.clear();
 +
@@ -3296,13 +3304,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void Greedy::resolve_exception_entry(BlockBegin* block, int reg_num, GreedyMoveResolver &move_resolver) {
++void Greedy::resolve_exception_entry(BlockBegin* block, int reg_num, MoveResolver &move_resolver) {
 +  if (interval_at(reg_num) == NULL) {
 +    // if a phi function is never used, no interval is created -> ignore this
 +    return;
 +  }
 +
-+  GreedyInterval* interval = interval_at_block_begin(block, reg_num);
++  Interval* interval = interval_at_block_begin(block, reg_num);
 +  int reg = interval->assigned_reg();
 +  int regHi = interval->assigned_regHi();
 +
@@ -3332,7 +3340,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +    assert(interval->from() == from_op_id, "must be true now");
 +
-+    GreedyInterval* spilled_part = interval;
++    Interval* spilled_part = interval;
 +    if (interval->to() != to_op_id) {
 +      // the part after to_op_id is unchanged
 +      spilled_part = interval->split_from_start(to_op_id);
@@ -3345,7 +3353,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void Greedy::resolve_exception_entry(BlockBegin* block, GreedyMoveResolver &move_resolver) {
++void Greedy::resolve_exception_entry(BlockBegin* block, MoveResolver &move_resolver) {
 +  assert(block->is_set(BlockBegin::exception_entry_flag), "should not call otherwise");
 +  DEBUG_ONLY(move_resolver.check_empty());
 +
@@ -3368,7 +3376,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void Greedy::resolve_exception_edge(XHandler* handler, int throwing_op_id, int reg_num, Phi* phi, GreedyMoveResolver &move_resolver) {
++void Greedy::resolve_exception_edge(XHandler* handler, int throwing_op_id, int reg_num, Phi* phi, MoveResolver &move_resolver) {
 +  if (interval_at(reg_num) == NULL) {
 +    // if a phi function is never used, no interval is created -> ignore this
 +    return;
@@ -3377,7 +3385,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  // the computation of to_interval is equal to resolve_collect_mappings,
 +  // but from_interval is more complicated because of phi functions
 +  BlockBegin* to_block = handler->entry_block();
-+  GreedyInterval* to_interval = interval_at_block_begin(to_block, reg_num);
++  Interval* to_interval = interval_at_block_begin(to_block, reg_num);
 +
 +  if (phi != NULL) {
 +    // phi function of the exception entry block
@@ -3396,14 +3404,14 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      move_resolver.add_mapping(LIR_OprFact::value_type(con->type()), to_interval);
 +    } else {
 +      // search split child at the throwing op_id
-+      GreedyInterval* from_interval = interval_at_op_id(from_value->operand()->vreg_number(), throwing_op_id);
++      Interval* from_interval = interval_at_op_id(from_value->operand()->vreg_number(), throwing_op_id);
 +      move_resolver.add_mapping(from_interval, to_interval);
 +    }
 +
 +  } else {
 +    // no phi function, so use reg_num also for from_interval
 +    // search split child at the throwing op_id
-+    GreedyInterval* from_interval = interval_at_op_id(reg_num, throwing_op_id);
++    Interval* from_interval = interval_at_op_id(reg_num, throwing_op_id);
 +    if (from_interval != to_interval) {
 +      // optimization to reduce number of moves: when to_interval is on stack and
 +      // the stack slot is known to be always correct, then no move is necessary
@@ -3414,7 +3422,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void Greedy::resolve_exception_edge(XHandler* handler, int throwing_op_id, GreedyMoveResolver &move_resolver) {
++void Greedy::resolve_exception_edge(XHandler* handler, int throwing_op_id, MoveResolver &move_resolver) {
 +  TRACE_GREEDY(4, tty->print_cr("resolving exception handler B%d: throwing_op_id=%d", handler->entry_block()->block_id(), throwing_op_id));
 +
 +  DEBUG_ONLY(move_resolver.check_empty());
@@ -3446,7 +3454,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +void Greedy::resolve_exception_handlers() {
-+  GreedyMoveResolver move_resolver(this);
++  MoveResolver move_resolver(this);
 +  LIR_OpVisitState visitor;
 +  int num_blocks = block_count();
 +
@@ -3494,7 +3502,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +// ********** Phase 7: assign register numbers back to LIR
 +// (includes computation of debug information and oop maps)
 +
-+VMReg Greedy::vm_reg_for_interval(GreedyInterval* interval) {
++VMReg Greedy::vm_reg_for_interval(Interval* interval) {
 +  VMReg reg = interval->cached_vm_reg();
 +  if (!reg->is_valid() ) {
 +    reg = vm_reg_for_operand(operand_for_interval(interval));
@@ -3510,7 +3518,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+LIR_Opr Greedy::operand_for_interval(GreedyInterval* interval) {
++LIR_Opr Greedy::operand_for_interval(Interval* interval) {
 +  LIR_Opr opr = interval->cached_opr();
 +  if (opr->is_illegal()) {
 +    opr = calc_operand_for_interval(interval);
@@ -3521,7 +3529,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return opr;
 +}
 +
-+LIR_Opr Greedy::calc_operand_for_interval(const GreedyInterval* interval) {
++LIR_Opr Greedy::calc_operand_for_interval(const Interval* interval) {
 +  int assigned_reg = interval->assigned_reg();
 +  BasicType type = interval->type();
 +
@@ -3639,7 +3647,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+LIR_Opr Greedy::canonical_spill_opr(GreedyInterval* interval) {
++LIR_Opr Greedy::canonical_spill_opr(Interval* interval) {
 +  assert(interval->canonical_spill_slot() >= nof_regs, "canonical spill slot not set");
 +  return LIR_OprFact::stack(interval->canonical_spill_slot() - nof_regs, interval->type());
 +}
@@ -3647,7 +3655,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +LIR_Opr Greedy::color_lir_opr(LIR_Opr opr, int op_id, LIR_OpVisitState::OprMode mode) {
 +  assert(opr->is_virtual(), "should not call this otherwise");
 +
-+  GreedyInterval* interval = interval_at(opr->vreg_number());
++  Interval* interval = interval_at(opr->vreg_number());
 +  assert(interval != NULL, "interval must exist");
 +
 +  if (op_id != -1) {
@@ -3697,7 +3705,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +#ifdef ASSERT
 +// some methods used to check correctness of debug information
 +
-+void greedy_assert_no_register_values(GrowableArray<ScopeValue*>* values) {
++void assert_no_register_values(GrowableArray<ScopeValue*>* values) {
 +  if (values == NULL) {
 +    return;
 +  }
@@ -3712,7 +3720,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void greedy_assert_no_register_values(GrowableArray<MonitorValue*>* values) {
++void assert_no_register_values(GrowableArray<MonitorValue*>* values) {
 +  if (values == NULL) {
 +    return;
 +  }
@@ -3728,14 +3736,14 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void greedy_assert_equal(Location l1, Location l2) {
++void assert_equal(Location l1, Location l2) {
 +  assert(l1.where() == l2.where() && l1.type() == l2.type() && l1.offset() == l2.offset(), "");
 +}
 +
-+void greedy_assert_equal(ScopeValue* v1, ScopeValue* v2) {
++void assert_equal(ScopeValue* v1, ScopeValue* v2) {
 +  if (v1->is_location()) {
 +    assert(v2->is_location(), "");
-+    greedy_assert_equal(((LocationValue*)v1)->location(), ((LocationValue*)v2)->location());
++    assert_equal(((LocationValue*)v1)->location(), ((LocationValue*)v2)->location());
 +  } else if (v1->is_constant_int()) {
 +    assert(v2->is_constant_int(), "");
 +    assert(((ConstantIntValue*)v1)->value() == ((ConstantIntValue*)v2)->value(), "");
@@ -3753,12 +3761,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void greedy_assert_equal(MonitorValue* m1, MonitorValue* m2) {
-+  greedy_assert_equal(m1->owner(), m2->owner());
-+  greedy_assert_equal(m1->basic_lock(), m2->basic_lock());
++void assert_equal(MonitorValue* m1, MonitorValue* m2) {
++  assert_equal(m1->owner(), m2->owner());
++  assert_equal(m1->basic_lock(), m2->basic_lock());
 +}
 +
-+void greedy_assert_equal(IRScopeDebugInfo* d1, IRScopeDebugInfo* d2) {
++void assert_equal(IRScopeDebugInfo* d1, IRScopeDebugInfo* d2) {
 +  assert(d1->scope() == d2->scope(), "not equal");
 +  assert(d1->bci() == d2->bci(), "not equal");
 +
@@ -3766,7 +3774,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    assert(d1->locals() != NULL && d2->locals() != NULL, "not equal");
 +    assert(d1->locals()->length() == d2->locals()->length(), "not equal");
 +    for (int i = 0; i < d1->locals()->length(); i++) {
-+      greedy_assert_equal(d1->locals()->at(i), d2->locals()->at(i));
++      assert_equal(d1->locals()->at(i), d2->locals()->at(i));
 +    }
 +  } else {
 +    assert(d1->locals() == NULL && d2->locals() == NULL, "not equal");
@@ -3776,7 +3784,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    assert(d1->expressions() != NULL && d2->expressions() != NULL, "not equal");
 +    assert(d1->expressions()->length() == d2->expressions()->length(), "not equal");
 +    for (int i = 0; i < d1->expressions()->length(); i++) {
-+      greedy_assert_equal(d1->expressions()->at(i), d2->expressions()->at(i));
++      assert_equal(d1->expressions()->at(i), d2->expressions()->at(i));
 +    }
 +  } else {
 +    assert(d1->expressions() == NULL && d2->expressions() == NULL, "not equal");
@@ -3786,7 +3794,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    assert(d1->monitors() != NULL && d2->monitors() != NULL, "not equal");
 +    assert(d1->monitors()->length() == d2->monitors()->length(), "not equal");
 +    for (int i = 0; i < d1->monitors()->length(); i++) {
-+      greedy_assert_equal(d1->monitors()->at(i), d2->monitors()->at(i));
++      assert_equal(d1->monitors()->at(i), d2->monitors()->at(i));
 +    }
 +  } else {
 +    assert(d1->monitors() == NULL && d2->monitors() == NULL, "not equal");
@@ -3794,13 +3802,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +  if (d1->caller() != NULL) {
 +    assert(d1->caller() != NULL && d2->caller() != NULL, "not equal");
-+    greedy_assert_equal(d1->caller(), d2->caller());
++    assert_equal(d1->caller(), d2->caller());
 +  } else {
 +    assert(d1->caller() == NULL && d2->caller() == NULL, "not equal");
 +  }
 +}
 +
-+void greedy_check_stack_depth(CodeEmitInfo* info, int stack_end) {
++void check_stack_depth(CodeEmitInfo* info, int stack_end) {
 +  if (info->stack()->bci() != SynchronizationEntryBCI && !info->scope()->method()->is_native()) {
 +    Bytecodes::Code code = info->scope()->method()->java_code_at_bci(info->stack()->bci());
 +    switch (code) {
@@ -3829,24 +3837,24 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +#endif // ASSERT
 +
 +
-+GreedyIntervalWalker* Greedy::init_compute_oop_maps() {
++IntervalWalker* Greedy::init_compute_oop_maps() {
 +  // setup lists of potential oops for walking
-+  GreedyInterval* oop_intervals;
-+  GreedyInterval* non_oop_intervals;
++  Interval* oop_intervals;
++  Interval* non_oop_intervals;
 +
 +  create_unhandled_lists(&oop_intervals, &non_oop_intervals, is_oop_interval, NULL);
 +
 +  // intervals that have no oops inside need not to be processed
 +  // to ensure a walking until the last instruction id, add a dummy interval
 +  // with a high operation id
-+  non_oop_intervals = new GreedyInterval(any_reg);
++  non_oop_intervals = new Interval(any_reg);
 +  non_oop_intervals->add_range(max_jint - 2, max_jint - 1);
 +
-+  return new GreedyIntervalWalker(this, oop_intervals, non_oop_intervals);
++  return new IntervalWalker(this, oop_intervals, non_oop_intervals);
 +}
 +
 +
-+OopMap* Greedy::compute_oop_map(GreedyIntervalWalker* iw, LIR_Op* op, CodeEmitInfo* info, bool is_call_site) {
++OopMap* Greedy::compute_oop_map(IntervalWalker* iw, LIR_Op* op, CodeEmitInfo* info, bool is_call_site) {
 +  TRACE_GREEDY(3, tty->print_cr("creating oop map at op_id %d", op->id()));
 +
 +  // walk before the current operation -> intervals that start at
@@ -3859,14 +3867,14 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  OopMap* map = new OopMap(frame_size, arg_count);
 +
 +  // Iterate through active intervals
-+  for (GreedyInterval* interval = iw->active_first(fixedKind); interval != GreedyInterval::end(); interval = interval->next()) {
++  for (Interval* interval = iw->active_first(fixedKind); interval != Interval::end(); interval = interval->next()) {
 +    int assigned_reg = interval->assigned_reg();
 +
 +    assert(interval->current_from() <= op->id() && op->id() <= interval->current_to(), "interval should not be active otherwise");
 +    assert(interval->assigned_regHi() == any_reg, "oop must be single word");
 +    assert(interval->reg_num() >= LIR_OprDesc::vreg_base, "fixed interval found");
 +
-+    // Check if this range covers the instruction. GreedyIntervals that
++    // Check if this range covers the instruction. Intervals that
 +    // start or end at the current operation are not included in the
 +    // oop map, except in the case of patching moves.  For patching
 +    // moves, any intervals which end at this instruction are included
@@ -3905,7 +3913,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void Greedy::compute_oop_map(GreedyIntervalWalker* iw, const LIR_OpVisitState &visitor, LIR_Op* op) {
++void Greedy::compute_oop_map(IntervalWalker* iw, const LIR_OpVisitState &visitor, LIR_Op* op) {
 +  assert(visitor.info_count() > 0, "no oop map needed");
 +
 +  // compute oop_map only for first CodeEmitInfo
@@ -3949,7 +3957,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +ConstantIntValue*      Greedy::_int_0_scope_value =  new (ResourceObj::C_HEAP, mtCompiler) ConstantIntValue(0);
 +ConstantIntValue*      Greedy::_int_1_scope_value =  new (ResourceObj::C_HEAP, mtCompiler) ConstantIntValue(1);
 +ConstantIntValue*      Greedy::_int_2_scope_value =  new (ResourceObj::C_HEAP, mtCompiler) ConstantIntValue(2);
-+LocationValue*         _greedy_illegal_value = new (ResourceObj::C_HEAP, mtCompiler) LocationValue(Location());
++LocationValue*         _illegal_value = new (ResourceObj::C_HEAP, mtCompiler) LocationValue(Location());
 +
 +void Greedy::init_compute_debug_info() {
 +  // cache for frequently used scope values
@@ -4054,7 +4062,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +
 +    // check if cached value is correct
-+    DEBUG_ONLY(greedy_assert_equal(sv, location_for_name(stack_idx, is_oop ? Location::oop : Location::normal)));
++    DEBUG_ONLY(assert_equal(sv, location_for_name(stack_idx, is_oop ? Location::oop : Location::normal)));
 +
 +    scope_values->append(sv);
 +    return 1;
@@ -4073,7 +4081,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +
 +    // check if cached value is correct
-+    DEBUG_ONLY(greedy_assert_equal(sv, new LocationValue(Location::new_reg_loc(is_oop ? Location::oop : int_loc_type, frame_map()->regname(opr)))));
++    DEBUG_ONLY(assert_equal(sv, new LocationValue(Location::new_reg_loc(is_oop ? Location::oop : int_loc_type, frame_map()->regname(opr)))));
 +
 +    scope_values->append(sv);
 +    return 1;
@@ -4302,7 +4310,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +  } else {
 +    // append a dummy value because real value not needed
-+    scope_values->append(_greedy_illegal_value);
++    scope_values->append(_illegal_value);
 +    return 1;
 +  }
 +}
@@ -4345,7 +4353,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    nof_locals = cur_scope->method()->max_locals();
 +    locals = new GrowableArray<ScopeValue*>(nof_locals);
 +    for(int i = 0; i < nof_locals; i++) {
-+      locals->append(_greedy_illegal_value);
++      locals->append(_illegal_value);
 +    }
 +  }
 +
@@ -4386,19 +4394,19 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +  assert(innermost_scope != NULL && innermost_state != NULL, "why is it missing?");
 +
-+  DEBUG_ONLY(greedy_check_stack_depth(info, innermost_state->stack_size()));
++  DEBUG_ONLY(check_stack_depth(info, innermost_state->stack_size()));
 +
 +  if (info->_scope_debug_info == NULL) {
 +    // compute debug information
 +    info->_scope_debug_info = compute_debug_info_for_scope(op_id, innermost_scope, innermost_state, innermost_state);
 +  } else {
 +    // debug information already set. Check that it is correct from the current point of view
-+    DEBUG_ONLY(greedy_assert_equal(info->_scope_debug_info, compute_debug_info_for_scope(op_id, innermost_scope, innermost_state, innermost_state)));
++    DEBUG_ONLY(assert_equal(info->_scope_debug_info, compute_debug_info_for_scope(op_id, innermost_scope, innermost_state, innermost_state)));
 +  }
 +}
 +
 +
-+void Greedy::assign_reg_num(LIR_OpList* instructions, GreedyIntervalWalker* iw) {
++void Greedy::assign_reg_num(LIR_OpList* instructions, IntervalWalker* iw) {
 +  LIR_OpVisitState visitor;
 +  int num_inst = instructions->length();
 +  bool has_dead = false;
@@ -4497,7 +4505,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  TIME_GREEDY(timer_assign_reg_num);
 +
 +  init_compute_debug_info();
-+  GreedyIntervalWalker* iw = init_compute_oop_maps();
++  IntervalWalker* iw = init_compute_oop_maps();
 +
 +  int num_blocks = block_count();
 +  for (int i = 0; i < num_blocks; i++) {
@@ -4600,7 +4608,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    tty->print_cr("%s", label);
 +
 +    for (i = 0; i < interval_count(); i++) {
-+      GreedyInterval* interval = interval_at(i);
++      Interval* interval = interval_at(i);
 +      if (interval != NULL) {
 +        interval->print();
 +      }
@@ -4662,53 +4670,53 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  bool has_error = false;
 +
 +  for (int i = 0; i < len; i++) {
-+    GreedyInterval* i1 = interval_at(i);
++    Interval* i1 = interval_at(i);
 +    if (i1 == NULL) continue;
 +
 +    i1->check_split_children();
 +
 +    if (i1->reg_num() != i) {
-+      tty->print_cr("GreedyInterval %d is on position %d in list", i1->reg_num(), i); i1->print(); tty->cr();
++      tty->print_cr("Interval %d is on position %d in list", i1->reg_num(), i); i1->print(); tty->cr();
 +      has_error = true;
 +    }
 +
 +    if (i1->reg_num() >= LIR_OprDesc::vreg_base && i1->type() == T_ILLEGAL) {
-+      tty->print_cr("GreedyInterval %d has no type assigned", i1->reg_num()); i1->print(); tty->cr();
++      tty->print_cr("Interval %d has no type assigned", i1->reg_num()); i1->print(); tty->cr();
 +      has_error = true;
 +    }
 +
 +    if (i1->assigned_reg() == any_reg) {
-+      tty->print_cr("GreedyInterval %d has no register assigned", i1->reg_num()); i1->print(); tty->cr();
++      tty->print_cr("Interval %d has no register assigned", i1->reg_num()); i1->print(); tty->cr();
 +      has_error = true;
 +    }
 +
 +    if (i1->assigned_reg() == i1->assigned_regHi()) {
-+      tty->print_cr("GreedyInterval %d: low and high register equal", i1->reg_num()); i1->print(); tty->cr();
++      tty->print_cr("Interval %d: low and high register equal", i1->reg_num()); i1->print(); tty->cr();
 +      has_error = true;
 +    }
 +
 +    if (!is_processed_reg_num(i1->assigned_reg())) {
-+      tty->print_cr("Can not have an GreedyInterval for an ignored register"); i1->print(); tty->cr();
++      tty->print_cr("Can not have an Interval for an ignored register"); i1->print(); tty->cr();
 +      has_error = true;
 +    }
 +
-+    if (i1->first() == GreedyRange::end()) {
-+      tty->print_cr("GreedyInterval %d has no GreedyRange", i1->reg_num()); i1->print(); tty->cr();
++    if (i1->first() == Range::end()) {
++      tty->print_cr("Interval %d has no Range", i1->reg_num()); i1->print(); tty->cr();
 +      has_error = true;
 +    }
 +
-+    for (GreedyRange* r = i1->first(); r != GreedyRange::end(); r = r->next()) {
++    for (Range* r = i1->first(); r != Range::end(); r = r->next()) {
 +      if (r->from() >= r->to()) {
-+        tty->print_cr("GreedyInterval %d has zero length range", i1->reg_num()); i1->print(); tty->cr();
++        tty->print_cr("Interval %d has zero length range", i1->reg_num()); i1->print(); tty->cr();
 +        has_error = true;
 +      }
 +    }
 +
 +    for (int j = i + 1; j < len; j++) {
-+      GreedyInterval* i2 = interval_at(j);
++      Interval* i2 = interval_at(j);
 +      if (i2 == NULL) continue;
 +
-+      // special intervals that are created in GreedyMoveResolver
++      // special intervals that are created in MoveResolver
 +      // -> ignore them because the range information has no meaning there
 +      if (i1->from() == 1 && i1->to() == 2) continue;
 +      if (i2->from() == 1 && i2->to() == 2) continue;
@@ -4718,7 +4726,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      int r2 = i2->assigned_reg();
 +      int r2Hi = i2->assigned_regHi();
 +      if (i1->intersects(i2) && (r1 == r2 || r1 == r2Hi || (r1Hi != any_reg && (r1Hi == r2 || r1Hi == r2Hi)))) {
-+        tty->print_cr("GreedyIntervals %d and %d overlap and have the same register assigned", i1->reg_num(), i2->reg_num());
++        tty->print_cr("Intervals %d and %d overlap and have the same register assigned", i1->reg_num(), i2->reg_num());
 +        i1->print(); tty->cr();
 +        i2->print(); tty->cr();
 +        has_error = true;
@@ -4731,15 +4739,15 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +void Greedy::verify_no_oops_in_fixed_intervals() {
-+  GreedyInterval* fixed_intervals;
-+  GreedyInterval* other_intervals;
++  Interval* fixed_intervals;
++  Interval* other_intervals;
 +  create_unhandled_lists(&fixed_intervals, &other_intervals, is_precolored_cpu_interval, NULL);
 +
 +  // to ensure a walking until the last instruction id, add a dummy interval
 +  // with a high operation id
-+  other_intervals = new GreedyInterval(any_reg);
++  other_intervals = new Interval(any_reg);
 +  other_intervals->add_range(max_jint - 2, max_jint - 1);
-+  GreedyIntervalWalker* iw = new GreedyIntervalWalker(this, fixed_intervals, other_intervals);
++  IntervalWalker* iw = new IntervalWalker(this, fixed_intervals, other_intervals);
 +
 +  LIR_OpVisitState visitor;
 +  for (int i = 0; i < block_count(); i++) {
@@ -4770,8 +4778,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +        // Make sure none of the fixed registers is live across an
 +        // oopmap since we can't handle that correctly.
 +        if (check_live) {
-+          for (GreedyInterval* interval = iw->active_first(fixedKind);
-+               interval != GreedyInterval::end();
++          for (Interval* interval = iw->active_first(fixedKind);
++               interval != Interval::end();
 +               interval = interval->next()) {
 +            if (interval->current_to() > op->id() + 1) {
 +              // This interval is live out of this op so make sure
@@ -4813,7 +4821,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +              // operand is a non-virtual cpu register and contains an oop
 +              TRACE_GREEDY(4, op->print_on(tty); tty->print("checking operand "); opr->print(); tty->cr());
 +
-+              GreedyInterval* interval = interval_at(reg_num(opr));
++              Interval* interval = interval_at(reg_num(opr));
 +              assert(interval != NULL, "no interval");
 +
 +              if (mode == LIR_OpVisitState::inputMode) {
@@ -4865,30 +4873,30 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 + private:
 +  Greedy*   _allocator;
 +  BlockList     _work_list;      // all blocks that must be processed
-+  GreedyIntervalsList _saved_states;   // saved information of previous check
++  IntervalsList _saved_states;   // saved information of previous check
 +
 +  // simplified access to methods of Greedy
 +  Compilation*  compilation() const              { return _allocator->compilation(); }
-+  GreedyInterval*     interval_at(int reg_num) const   { return _allocator->interval_at(reg_num); }
++  Interval*     interval_at(int reg_num) const   { return _allocator->interval_at(reg_num); }
 +  int           reg_num(LIR_Opr opr) const       { return _allocator->reg_num(opr); }
 +
 +  // currently, only registers are processed
 +  int           state_size()                     { return Greedy::nof_regs; }
 +
 +  // accessors
-+  GreedyIntervalList* state_for_block(BlockBegin* block) { return _saved_states.at(block->block_id()); }
-+  void          set_state_for_block(BlockBegin* block, GreedyIntervalList* saved_state) { _saved_states.at_put(block->block_id(), saved_state); }
++  IntervalList* state_for_block(BlockBegin* block) { return _saved_states.at(block->block_id()); }
++  void          set_state_for_block(BlockBegin* block, IntervalList* saved_state) { _saved_states.at_put(block->block_id(), saved_state); }
 +  void          add_to_work_list(BlockBegin* block) { if (!_work_list.contains(block)) _work_list.append(block); }
 +
 +  // helper functions
-+  GreedyIntervalList* copy(GreedyIntervalList* input_state);
-+  void          state_put(GreedyIntervalList* input_state, int reg, GreedyInterval* interval);
-+  bool          check_state(GreedyIntervalList* input_state, int reg, GreedyInterval* interval);
++  IntervalList* copy(IntervalList* input_state);
++  void          state_put(IntervalList* input_state, int reg, Interval* interval);
++  bool          check_state(IntervalList* input_state, int reg, Interval* interval);
 +
 +  void process_block(BlockBegin* block);
-+  void process_xhandler(XHandler* xhandler, GreedyIntervalList* input_state);
-+  void process_successor(BlockBegin* block, GreedyIntervalList* input_state);
-+  void process_operations(LIR_List* ops, GreedyIntervalList* input_state);
++  void process_xhandler(XHandler* xhandler, IntervalList* input_state);
++  void process_successor(BlockBegin* block, IntervalList* input_state);
++  void process_operations(LIR_List* ops, IntervalList* input_state);
 +
 + public:
 +  GreedyRegisterVerifier(Greedy* allocator)
@@ -4910,12 +4918,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +void GreedyRegisterVerifier::verify(BlockBegin* start) {
 +  // setup input registers (method arguments) for first block
-+  GreedyIntervalList* input_state = new GreedyIntervalList(state_size(), NULL);
++  IntervalList* input_state = new IntervalList(state_size(), NULL);
 +  CallingConvention* args = compilation()->frame_map()->incoming_arguments();
 +  for (int n = 0; n < args->length(); n++) {
 +    LIR_Opr opr = args->at(n);
 +    if (opr->is_register()) {
-+      GreedyInterval* interval = interval_at(reg_num(opr));
++      Interval* interval = interval_at(reg_num(opr));
 +
 +      if (interval->assigned_reg() < state_size()) {
 +        input_state->at_put(interval->assigned_reg(), interval);
@@ -4942,7 +4950,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  TRACE_GREEDY(2, tty->cr(); tty->print_cr("process_block B%d", block->block_id()));
 +
 +  // must copy state because it is modified
-+  GreedyIntervalList* input_state = copy(state_for_block(block));
++  IntervalList* input_state = copy(state_for_block(block));
 +
 +  if (TraceGreedyLevel >= 4) {
 +    tty->print_cr("Input-State of intervals:");
@@ -4967,7 +4975,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void GreedyRegisterVerifier::process_xhandler(XHandler* xhandler, GreedyIntervalList* input_state) {
++void GreedyRegisterVerifier::process_xhandler(XHandler* xhandler, IntervalList* input_state) {
 +  TRACE_GREEDY(2, tty->print_cr("process_xhandler B%d", xhandler->entry_block()->block_id()));
 +
 +  // must copy state because it is modified
@@ -4979,8 +4987,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  process_successor(xhandler->entry_block(), input_state);
 +}
 +
-+void GreedyRegisterVerifier::process_successor(BlockBegin* block, GreedyIntervalList* input_state) {
-+  GreedyIntervalList* saved_state = state_for_block(block);
++void GreedyRegisterVerifier::process_successor(BlockBegin* block, IntervalList* input_state) {
++  IntervalList* saved_state = state_for_block(block);
 +
 +  if (saved_state != NULL) {
 +    // this block was already processed before.
@@ -5022,13 +5030,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+GreedyIntervalList* GreedyRegisterVerifier::copy(GreedyIntervalList* input_state) {
-+  GreedyIntervalList* copy_state = new GreedyIntervalList(input_state->length());
++IntervalList* GreedyRegisterVerifier::copy(IntervalList* input_state) {
++  IntervalList* copy_state = new IntervalList(input_state->length());
 +  copy_state->push_all(input_state);
 +  return copy_state;
 +}
 +
-+void GreedyRegisterVerifier::state_put(GreedyIntervalList* input_state, int reg, GreedyInterval* interval) {
++void GreedyRegisterVerifier::state_put(IntervalList* input_state, int reg, Interval* interval) {
 +  if (reg != Greedy::any_reg && reg < state_size()) {
 +    if (interval != NULL) {
 +      TRACE_GREEDY(4, tty->print_cr("        reg[%d] = %d", reg, interval->reg_num()));
@@ -5040,7 +5048,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+bool GreedyRegisterVerifier::check_state(GreedyIntervalList* input_state, int reg, GreedyInterval* interval) {
++bool GreedyRegisterVerifier::check_state(IntervalList* input_state, int reg, Interval* interval) {
 +  if (reg != Greedy::any_reg && reg < state_size()) {
 +    if (input_state->at(reg) != interval) {
 +      tty->print_cr("!! Error in register allocation: register %d does not contain interval %d", reg, interval->reg_num());
@@ -5050,7 +5058,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return false;
 +}
 +
-+void GreedyRegisterVerifier::process_operations(LIR_List* ops, GreedyIntervalList* input_state) {
++void GreedyRegisterVerifier::process_operations(LIR_List* ops, IntervalList* input_state) {
 +  // visit all instructions of the block
 +  LIR_OpVisitState visitor;
 +  bool has_error = false;
@@ -5067,7 +5075,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    for (j = 0; j < n; j++) {
 +      LIR_Opr opr = visitor.opr_at(LIR_OpVisitState::inputMode, j);
 +      if (opr->is_register() && Greedy::is_processed_reg_num(reg_num(opr))) {
-+        GreedyInterval* interval = interval_at(reg_num(opr));
++        Interval* interval = interval_at(reg_num(opr));
 +        if (op->id() != -1) {
 +          interval = interval->split_child_at_op_id(op->id(), LIR_OpVisitState::inputMode);
 +        }
@@ -5112,7 +5120,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    for (j = 0; j < n; j++) {
 +      LIR_Opr opr = visitor.opr_at(LIR_OpVisitState::tempMode, j);
 +      if (opr->is_register() && Greedy::is_processed_reg_num(reg_num(opr))) {
-+        GreedyInterval* interval = interval_at(reg_num(opr));
++        Interval* interval = interval_at(reg_num(opr));
 +        if (op->id() != -1) {
 +          interval = interval->split_child_at_op_id(op->id(), LIR_OpVisitState::tempMode);
 +        }
@@ -5127,7 +5135,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    for (j = 0; j < n; j++) {
 +      LIR_Opr opr = visitor.opr_at(LIR_OpVisitState::outputMode, j);
 +      if (opr->is_register() && Greedy::is_processed_reg_num(reg_num(opr))) {
-+        GreedyInterval* interval = interval_at(reg_num(opr));
++        Interval* interval = interval_at(reg_num(opr));
 +        if (op->id() != -1) {
 +          interval = interval->split_child_at_op_id(op->id(), LIR_OpVisitState::outputMode);
 +        }
@@ -5144,9 +5152,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +
-+// **** Implementation of GreedyMoveResolver ******************************
++// **** Implementation of MoveResolver ******************************
 +
-+GreedyMoveResolver::GreedyMoveResolver(Greedy* allocator) :
++MoveResolver::MoveResolver(Greedy* allocator) :
 +  _allocator(allocator),
 +  _multiple_reads_allowed(false),
 +  _mapping_from(8),
@@ -5165,7 +5173,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +#ifdef ASSERT
 +
-+void GreedyMoveResolver::check_empty() {
++void MoveResolver::check_empty() {
 +  assert(_mapping_from.length() == 0 && _mapping_from_opr.length() == 0 && _mapping_to.length() == 0, "list must be empty before and after processing");
 +  for (int i = 0; i < Greedy::nof_regs; i++) {
 +    assert(register_blocked(i) == 0, "register map must be empty before and after processing");
@@ -5173,7 +5181,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  assert(_multiple_reads_allowed == false, "must have default value");
 +}
 +
-+void GreedyMoveResolver::verify_before_resolve() {
++void MoveResolver::verify_before_resolve() {
 +  assert(_mapping_from.length() == _mapping_from_opr.length(), "length must be equal");
 +  assert(_mapping_from.length() == _mapping_to.length(), "length must be equal");
 +  assert(_insert_list != NULL && _insert_idx != -1, "insert position not set");
@@ -5198,7 +5206,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  used_regs.clear();
 +  if (!_multiple_reads_allowed) {
 +    for (i = 0; i < _mapping_from.length(); i++) {
-+      GreedyInterval* it = _mapping_from.at(i);
++      Interval* it = _mapping_from.at(i);
 +      if (it != NULL) {
 +        assert(!used_regs.at(it->assigned_reg()), "cannot read from same register twice");
 +        used_regs.set_bit(it->assigned_reg());
@@ -5213,7 +5221,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +  used_regs.clear();
 +  for (i = 0; i < _mapping_to.length(); i++) {
-+    GreedyInterval* it = _mapping_to.at(i);
++    Interval* it = _mapping_to.at(i);
 +    assert(!used_regs.at(it->assigned_reg()), "cannot write to same register twice");
 +    used_regs.set_bit(it->assigned_reg());
 +
@@ -5225,13 +5233,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +  used_regs.clear();
 +  for (i = 0; i < _mapping_from.length(); i++) {
-+    GreedyInterval* it = _mapping_from.at(i);
++    Interval* it = _mapping_from.at(i);
 +    if (it != NULL && it->assigned_reg() >= Greedy::nof_regs) {
 +      used_regs.set_bit(it->assigned_reg());
 +    }
 +  }
 +  for (i = 0; i < _mapping_to.length(); i++) {
-+    GreedyInterval* it = _mapping_to.at(i);
++    Interval* it = _mapping_to.at(i);
 +    assert(!used_regs.at(it->assigned_reg()) || it->assigned_reg() == _mapping_from.at(i)->assigned_reg(), "stack slots used in _mapping_from must be disjoint to _mapping_to");
 +  }
 +}
@@ -5240,7 +5248,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +// mark assigned_reg and assigned_regHi of the interval as blocked
-+void GreedyMoveResolver::block_registers(GreedyInterval* it) {
++void MoveResolver::block_registers(Interval* it) {
 +  int reg = it->assigned_reg();
 +  if (reg < Greedy::nof_regs) {
 +    assert(_multiple_reads_allowed || register_blocked(reg) == 0, "register already marked as used");
@@ -5254,7 +5262,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +// mark assigned_reg and assigned_regHi of the interval as unblocked
-+void GreedyMoveResolver::unblock_registers(GreedyInterval* it) {
++void MoveResolver::unblock_registers(Interval* it) {
 +  int reg = it->assigned_reg();
 +  if (reg < Greedy::nof_regs) {
 +    assert(register_blocked(reg) > 0, "register already marked as unused");
@@ -5268,7 +5276,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +// check if assigned_reg and assigned_regHi of the to-interval are not blocked (or only blocked by from)
-+bool GreedyMoveResolver::save_to_process_move(GreedyInterval* from, GreedyInterval* to) {
++bool MoveResolver::save_to_process_move(Interval* from, Interval* to) {
 +  int from_reg = -1;
 +  int from_regHi = -1;
 +  if (from != NULL) {
@@ -5293,12 +5301,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void GreedyMoveResolver::create_insertion_buffer(LIR_List* list) {
++void MoveResolver::create_insertion_buffer(LIR_List* list) {
 +  assert(!_insertion_buffer.initialized(), "overwriting existing buffer");
 +  _insertion_buffer.init(list);
 +}
 +
-+void GreedyMoveResolver::append_insertion_buffer() {
++void MoveResolver::append_insertion_buffer() {
 +  if (_insertion_buffer.initialized()) {
 +    _insertion_buffer.lir_list()->append(&_insertion_buffer);
 +  }
@@ -5308,7 +5316,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  _insert_idx = -1;
 +}
 +
-+void GreedyMoveResolver::insert_move(GreedyInterval* from_interval, GreedyInterval* to_interval) {
++void MoveResolver::insert_move(Interval* from_interval, Interval* to_interval) {
 +  assert(from_interval->reg_num() != to_interval->reg_num(), "from and to interval equal");
 +  assert(from_interval->type() == to_interval->type(), "move between different types");
 +  assert(_insert_list != NULL && _insert_idx != -1, "must setup insert position first");
@@ -5325,10 +5333,10 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +  _insertion_buffer.move(_insert_idx, from_opr, to_opr);
 +
-+  TRACE_GREEDY(4, tty->print_cr("GreedyMoveResolver: inserted move from register %d (%d, %d) to %d (%d, %d)", from_interval->reg_num(), from_interval->assigned_reg(), from_interval->assigned_regHi(), to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
++  TRACE_GREEDY(4, tty->print_cr("MoveResolver: inserted move from register %d (%d, %d) to %d (%d, %d)", from_interval->reg_num(), from_interval->assigned_reg(), from_interval->assigned_regHi(), to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
 +}
 +
-+void GreedyMoveResolver::insert_move(LIR_Opr from_opr, GreedyInterval* to_interval) {
++void MoveResolver::insert_move(LIR_Opr from_opr, Interval* to_interval) {
 +  assert(from_opr->type() == to_interval->type(), "move between different types");
 +  assert(_insert_list != NULL && _insert_idx != -1, "must setup insert position first");
 +  assert(_insertion_buffer.lir_list() == _insert_list, "wrong insertion buffer");
@@ -5336,12 +5344,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  LIR_Opr to_opr = LIR_OprFact::virtual_register(to_interval->reg_num(), to_interval->type());
 +  _insertion_buffer.move(_insert_idx, from_opr, to_opr);
 +
-+  TRACE_GREEDY(4, tty->print("GreedyMoveResolver: inserted move from constant "); from_opr->print(); tty->print_cr("  to %d (%d, %d)", to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
++  TRACE_GREEDY(4, tty->print("MoveResolver: inserted move from constant "); from_opr->print(); tty->print_cr("  to %d (%d, %d)", to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
 +}
 +
 +
-+void GreedyMoveResolver::resolve_mappings() {
-+  TRACE_GREEDY(4, tty->print_cr("GreedyMoveResolver: resolving mappings for Block B%d, index %d", _insert_list->block() != NULL ? _insert_list->block()->block_id() : -1, _insert_idx));
++void MoveResolver::resolve_mappings() {
++  TRACE_GREEDY(4, tty->print_cr("MoveResolver: resolving mappings for Block B%d, index %d", _insert_list->block() != NULL ? _insert_list->block()->block_id() : -1, _insert_idx));
 +  DEBUG_ONLY(verify_before_resolve());
 +
 +  // Block all registers that are used as input operands of a move.
@@ -5349,7 +5357,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  // This is necessary for detecting cycles in moves.
 +  int i;
 +  for (i = _mapping_from.length() - 1; i >= 0; i--) {
-+    GreedyInterval* from_interval = _mapping_from.at(i);
++    Interval* from_interval = _mapping_from.at(i);
 +    if (from_interval != NULL) {
 +      block_registers(from_interval);
 +    }
@@ -5360,8 +5368,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    bool processed_interval = false;
 +
 +    for (i = _mapping_from.length() - 1; i >= 0; i--) {
-+      GreedyInterval* from_interval = _mapping_from.at(i);
-+      GreedyInterval* to_interval = _mapping_to.at(i);
++      Interval* from_interval = _mapping_from.at(i);
++      Interval* to_interval = _mapping_to.at(i);
 +
 +      if (save_to_process_move(from_interval, to_interval)) {
 +        // this inverval can be processed because target is free
@@ -5389,8 +5397,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      assert(spill_candidate != -1, "no interval in register for spilling found");
 +
 +      // create a new spill interval and assign a stack slot to it
-+      GreedyInterval* from_interval = _mapping_from.at(spill_candidate);
-+      GreedyInterval* spill_interval = new GreedyInterval(-1);
++      Interval* from_interval = _mapping_from.at(spill_candidate);
++      Interval* spill_interval = new Interval(-1);
 +      spill_interval->set_type(from_interval->type());
 +
 +      // add a dummy range because real position is difficult to calculate
@@ -5408,7 +5416,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      spill_interval->assign_reg(spill_slot);
 +      allocator()->append_interval(spill_interval);
 +
-+      TRACE_GREEDY(4, tty->print_cr("created new GreedyInterval %d for spilling", spill_interval->reg_num()));
++      TRACE_GREEDY(4, tty->print_cr("created new Interval %d for spilling", spill_interval->reg_num()));
 +
 +      // insert a move from register to stack and update the mapping
 +      insert_move(from_interval, spill_interval);
@@ -5425,8 +5433,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void GreedyMoveResolver::set_insert_position(LIR_List* insert_list, int insert_idx) {
-+  TRACE_GREEDY(4, tty->print_cr("GreedyMoveResolver: setting insert position to Block B%d, index %d", insert_list->block() != NULL ? insert_list->block()->block_id() : -1, insert_idx));
++void MoveResolver::set_insert_position(LIR_List* insert_list, int insert_idx) {
++  TRACE_GREEDY(4, tty->print_cr("MoveResolver: setting insert position to Block B%d, index %d", insert_list->block() != NULL ? insert_list->block()->block_id() : -1, insert_idx));
 +  assert(_insert_list == NULL && _insert_idx == -1, "use move_insert_position instead of set_insert_position when data already set");
 +
 +  create_insertion_buffer(insert_list);
@@ -5434,8 +5442,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  _insert_idx = insert_idx;
 +}
 +
-+void GreedyMoveResolver::move_insert_position(LIR_List* insert_list, int insert_idx) {
-+  TRACE_GREEDY(4, tty->print_cr("GreedyMoveResolver: moving insert position to Block B%d, index %d", insert_list->block() != NULL ? insert_list->block()->block_id() : -1, insert_idx));
++void MoveResolver::move_insert_position(LIR_List* insert_list, int insert_idx) {
++  TRACE_GREEDY(4, tty->print_cr("MoveResolver: moving insert position to Block B%d, index %d", insert_list->block() != NULL ? insert_list->block()->block_id() : -1, insert_idx));
 +
 +  if (_insert_list != NULL && (insert_list != _insert_list || insert_idx != _insert_idx)) {
 +    // insert position changed -> resolve current mappings
@@ -5453,8 +5461,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  _insert_idx = insert_idx;
 +}
 +
-+void GreedyMoveResolver::add_mapping(GreedyInterval* from_interval, GreedyInterval* to_interval) {
-+  TRACE_GREEDY(4, tty->print_cr("GreedyMoveResolver: adding mapping from %d (%d, %d) to %d (%d, %d)", from_interval->reg_num(), from_interval->assigned_reg(), from_interval->assigned_regHi(), to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
++void MoveResolver::add_mapping(Interval* from_interval, Interval* to_interval) {
++  TRACE_GREEDY(4, tty->print_cr("MoveResolver: adding mapping from %d (%d, %d) to %d (%d, %d)", from_interval->reg_num(), from_interval->assigned_reg(), from_interval->assigned_regHi(), to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
 +
 +  _mapping_from.append(from_interval);
 +  _mapping_from_opr.append(LIR_OprFact::illegalOpr);
@@ -5462,8 +5470,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void GreedyMoveResolver::add_mapping(LIR_Opr from_opr, GreedyInterval* to_interval) {
-+  TRACE_GREEDY(4, tty->print("GreedyMoveResolver: adding mapping from "); from_opr->print(); tty->print_cr(" to %d (%d, %d)", to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
++void MoveResolver::add_mapping(LIR_Opr from_opr, Interval* to_interval) {
++  TRACE_GREEDY(4, tty->print("MoveResolver: adding mapping from "); from_opr->print(); tty->print_cr(" to %d (%d, %d)", to_interval->reg_num(), to_interval->assigned_reg(), to_interval->assigned_regHi()));
 +  assert(from_opr->is_constant(), "only for constants");
 +
 +  _mapping_from.append(NULL);
@@ -5471,7 +5479,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  _mapping_to.append(to_interval);
 +}
 +
-+void GreedyMoveResolver::resolve_and_append_moves() {
++void MoveResolver::resolve_and_append_moves() {
 +  if (has_mappings()) {
 +    resolve_mappings();
 +  }
@@ -5480,9 +5488,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +
-+// **** Implementation of GreedyRange *************************************
++// **** Implementation of Range *************************************
 +
-+GreedyRange::GreedyRange(int from, int to, GreedyRange* next) :
++Range::Range(int from, int to, Range* next) :
 +  _from(from),
 +  _to(to),
 +  _next(next)
@@ -5490,13 +5498,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +// initialize sentinel
-+GreedyRange* GreedyRange::_end = NULL;
-+void GreedyRange::initialize(Arena* arena) {
-+  _end = new (arena) GreedyRange(max_jint, max_jint, NULL);
++Range* Range::_end = NULL;
++void Range::initialize(Arena* arena) {
++  _end = new (arena) Range(max_jint, max_jint, NULL);
 +}
 +
-+int GreedyRange::intersects_at(GreedyRange* r2) const {
-+  const GreedyRange* r1 = this;
++int Range::intersects_at(Range* r2) const {
++  const Range* r1 = this;
 +
 +  assert(r1 != NULL && r2 != NULL, "null ranges not allowed");
 +  assert(r1 != _end && r2 != _end, "empty ranges not allowed");
@@ -5527,28 +5535,28 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +#ifndef PRODUCT
-+void GreedyRange::print(outputStream* out) const {
++void Range::print(outputStream* out) const {
 +  out->print("[%d, %d[ ", _from, _to);
 +}
 +#endif
 +
 +
 +
-+// **** Implementation of GreedyInterval **********************************
++// **** Implementation of Interval **********************************
 +
 +// initialize sentinel
-+GreedyInterval* GreedyInterval::_end = NULL;
-+void GreedyInterval::initialize(Arena* arena) {
-+  GreedyRange::initialize(arena);
-+  _end = new (arena) GreedyInterval(-1);
++Interval* Interval::_end = NULL;
++void Interval::initialize(Arena* arena) {
++  Range::initialize(arena);
++  _end = new (arena) Interval(-1);
 +}
 +
-+GreedyInterval::GreedyInterval(int reg_num) :
++Interval::Interval(int reg_num) :
 +  _reg_num(reg_num),
 +  _type(T_ILLEGAL),
-+  _first(GreedyRange::end()),
++  _first(Range::end()),
 +  _use_pos_and_kinds(12),
-+  _current(GreedyRange::end()),
++  _current(Range::end()),
 +  _next(_end),
 +  _state(invalidState),
 +  _assigned_reg(Greedy::any_reg),
@@ -5567,11 +5575,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  _current_split_child = this;
 +}
 +
-+int GreedyInterval::calc_to() {
-+  assert(_first != GreedyRange::end(), "interval has no range");
++int Interval::calc_to() {
++  assert(_first != Range::end(), "interval has no range");
 +
-+  GreedyRange* r = _first;
-+  while (r->next() != GreedyRange::end()) {
++  Range* r = _first;
++  while (r->next() != Range::end()) {
 +    r = r->next();
 +  }
 +  return r->to();
@@ -5580,19 +5588,19 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +#ifdef ASSERT
 +// consistency check of split-children
-+void GreedyInterval::check_split_children() {
++void Interval::check_split_children() {
 +  if (_split_children.length() > 0) {
 +    assert(is_split_parent(), "only split parents can have children");
 +
 +    for (int i = 0; i < _split_children.length(); i++) {
-+      GreedyInterval* i1 = _split_children.at(i);
++      Interval* i1 = _split_children.at(i);
 +
 +      assert(i1->split_parent() == this, "not a split child of this interval");
 +      assert(i1->type() == type(), "must be equal for all split children");
 +      assert(i1->canonical_spill_slot() == canonical_spill_slot(), "must be equal for all split children");
 +
 +      for (int j = i + 1; j < _split_children.length(); j++) {
-+        GreedyInterval* i2 = _split_children.at(j);
++        Interval* i2 = _split_children.at(j);
 +
 +        assert(i1->reg_num() != i2->reg_num(), "same register number");
 +
@@ -5608,7 +5616,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +#endif // ASSERT
 +
-+GreedyInterval* GreedyInterval::register_hint(bool search_split_child) const {
++Interval* Interval::register_hint(bool search_split_child) const {
 +  if (!search_split_child) {
 +    return _register_hint;
 +  }
@@ -5623,7 +5631,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +      // search the first split child that has a register assigned
 +      int len = _register_hint->_split_children.length();
 +      for (int i = 0; i < len; i++) {
-+        GreedyInterval* cur = _register_hint->_split_children.at(i);
++        Interval* cur = _register_hint->_split_children.at(i);
 +
 +        if (cur->assigned_reg() >= 0 && cur->assigned_reg() < Greedy::nof_regs) {
 +          return cur;
@@ -5637,11 +5645,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+GreedyInterval* GreedyInterval::split_child_at_op_id(int op_id, LIR_OpVisitState::OprMode mode) {
++Interval* Interval::split_child_at_op_id(int op_id, LIR_OpVisitState::OprMode mode) {
 +  assert(is_split_parent(), "can only be called for split parents");
 +  assert(op_id >= 0, "invalid op_id (method can not be called for spill moves)");
 +
-+  GreedyInterval* result;
++  Interval* result;
 +  if (_split_children.length() == 0) {
 +    result = this;
 +  } else {
@@ -5653,7 +5661,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +    int i;
 +    for (i = 0; i < len; i++) {
-+      GreedyInterval* cur = _split_children.at(i);
++      Interval* cur = _split_children.at(i);
 +      if (cur->from() <= op_id && op_id < cur->to() + to_offset) {
 +        if (i > 0) {
 +          // exchange current split child to start of list (faster access for next call)
@@ -5669,7 +5677,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +#ifdef ASSERT
 +    for (i = 0; i < len; i++) {
-+      GreedyInterval* tmp = _split_children.at(i);
++      Interval* tmp = _split_children.at(i);
 +      if (tmp != result && tmp->from() <= op_id && op_id < tmp->to() + to_offset) {
 +        tty->print_cr("two valid result intervals found for op_id %d: %d and %d", op_id, result->reg_num(), tmp->reg_num());
 +        result->print();
@@ -5688,17 +5696,17 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +// returns the last split child that ends before the given op_id
-+GreedyInterval* GreedyInterval::split_child_before_op_id(int op_id) {
++Interval* Interval::split_child_before_op_id(int op_id) {
 +  assert(op_id >= 0, "invalid op_id");
 +
-+  GreedyInterval* parent = split_parent();
-+  GreedyInterval* result = NULL;
++  Interval* parent = split_parent();
++  Interval* result = NULL;
 +
 +  int len = parent->_split_children.length();
 +  assert(len > 0, "no split children available");
 +
 +  for (int i = len - 1; i >= 0; i--) {
-+    GreedyInterval* cur = parent->_split_children.at(i);
++    Interval* cur = parent->_split_children.at(i);
 +    if (cur->to() <= op_id && (result == NULL || result->to() < cur->to())) {
 +      result = cur;
 +    }
@@ -5710,7 +5718,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +// checks if op_id is covered by any split child
-+bool GreedyInterval::split_child_covers(int op_id, LIR_OpVisitState::OprMode mode) {
++bool Interval::split_child_covers(int op_id, LIR_OpVisitState::OprMode mode) {
 +  assert(is_split_parent(), "can only be called for split parents");
 +  assert(op_id >= 0, "invalid op_id (method can not be called for spill moves)");
 +
@@ -5722,7 +5730,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    // extended case: check all split children
 +    int len = _split_children.length();
 +    for (int i = 0; i < len; i++) {
-+      GreedyInterval* cur = _split_children.at(i);
++      Interval* cur = _split_children.at(i);
 +      if (cur->covers(op_id, mode)) {
 +        return true;
 +      }
@@ -5733,7 +5741,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +// Note: use positions are sorted descending -> first use has highest index
-+int GreedyInterval::first_usage(GreedyIntervalUseKind min_use_kind) const {
++int Interval::first_usage(IntervalUseKind min_use_kind) const {
 +  assert(Greedy::is_virtual_interval(this), "cannot access use positions for fixed intervals");
 +
 +  for (int i = _use_pos_and_kinds.length() - 2; i >= 0; i -= 2) {
@@ -5744,7 +5752,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return max_jint;
 +}
 +
-+int GreedyInterval::next_usage(GreedyIntervalUseKind min_use_kind, int from) const {
++int Interval::next_usage(IntervalUseKind min_use_kind, int from) const {
 +  assert(Greedy::is_virtual_interval(this), "cannot access use positions for fixed intervals");
 +
 +  for (int i = _use_pos_and_kinds.length() - 2; i >= 0; i -= 2) {
@@ -5755,7 +5763,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return max_jint;
 +}
 +
-+int GreedyInterval::next_usage_exact(GreedyIntervalUseKind exact_use_kind, int from) const {
++int Interval::next_usage_exact(IntervalUseKind exact_use_kind, int from) const {
 +  assert(Greedy::is_virtual_interval(this), "cannot access use positions for fixed intervals");
 +
 +  for (int i = _use_pos_and_kinds.length() - 2; i >= 0; i -= 2) {
@@ -5766,7 +5774,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return max_jint;
 +}
 +
-+int GreedyInterval::previous_usage(GreedyIntervalUseKind min_use_kind, int from) const {
++int Interval::previous_usage(IntervalUseKind min_use_kind, int from) const {
 +  assert(Greedy::is_virtual_interval(this), "cannot access use positions for fixed intervals");
 +
 +  int prev = 0;
@@ -5781,7 +5789,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return prev;
 +}
 +
-+void GreedyInterval::add_use_pos(int pos, GreedyIntervalUseKind use_kind) {
++void Interval::add_use_pos(int pos, IntervalUseKind use_kind) {
 +  assert(covers(pos, LIR_OpVisitState::inputMode), "use position not covered by live range");
 +
 +  // do not add use positions for precolored intervals because
@@ -5811,9 +5819,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void GreedyInterval::add_range(int from, int to) {
++void Interval::add_range(int from, int to) {
 +  assert(from < to, "invalid range");
-+  assert(first() == GreedyRange::end() || to < first()->next()->from(), "not inserting at begin of interval");
++  assert(first() == Range::end() || to < first()->next()->from(), "not inserting at begin of interval");
 +  assert(from <= first()->to(), "not inserting at begin of interval");
 +
 +  if (first()->from() <= to) {
@@ -5822,16 +5830,16 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    first()->set_to  (MAX2(to,   first()->to()));
 +  } else {
 +    // insert new range
-+    _first = new GreedyRange(from, to, first());
++    _first = new Range(from, to, first());
 +  }
 +}
 +
-+GreedyInterval* GreedyInterval::new_split_child() {
++Interval* Interval::new_split_child() {
 +  // allocate new interval
-+  GreedyInterval* result = new GreedyInterval(-1);
++  Interval* result = new Interval(-1);
 +  result->set_type(type());
 +
-+  GreedyInterval* parent = split_parent();
++  Interval* parent = split_parent();
 +  result->_split_parent = parent;
 +  result->set_register_hint(parent);
 +
@@ -5839,7 +5847,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  if (parent->_split_children.length() == 0) {
 +    assert(is_split_parent(), "list must be initialized at first split");
 +
-+    parent->_split_children = GreedyIntervalList(4);
++    parent->_split_children = IntervalList(4);
 +    parent->_split_children.append(this);
 +  }
 +  parent->_split_children.append(result);
@@ -5857,30 +5865,30 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +// All split children are spilled to the same stack slot (stored in _canonical_spill_slot)
 +//
 +// Note: The new interval has no valid reg_num
-+GreedyInterval* GreedyInterval::split(int split_pos) {
++Interval* Interval::split(int split_pos) {
 +  assert(Greedy::is_virtual_interval(this), "cannot split fixed intervals");
 +
 +  // allocate new interval
-+  GreedyInterval* result = new_split_child();
++  Interval* result = new_split_child();
 +
 +  // split the ranges
-+  GreedyRange* prev = NULL;
-+  GreedyRange* cur = _first;
-+  while (cur != GreedyRange::end() && cur->to() <= split_pos) {
++  Range* prev = NULL;
++  Range* cur = _first;
++  while (cur != Range::end() && cur->to() <= split_pos) {
 +    prev = cur;
 +    cur = cur->next();
 +  }
-+  assert(cur != GreedyRange::end(), "split interval after end of last range");
++  assert(cur != Range::end(), "split interval after end of last range");
 +
 +  if (cur->from() < split_pos) {
-+    result->_first = new GreedyRange(split_pos, cur->to(), cur->next());
++    result->_first = new Range(split_pos, cur->to(), cur->next());
 +    cur->set_to(split_pos);
-+    cur->set_next(GreedyRange::end());
++    cur->set_next(Range::end());
 +
 +  } else {
 +    assert(prev != NULL, "split before start of first range");
 +    result->_first = cur;
-+    prev->set_next(GreedyRange::end());
++    prev->set_next(Range::end());
 +  }
 +  result->_current = result->_first;
 +  _cached_to = -1; // clear cached value
@@ -5925,21 +5933,21 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +//
 +// Currently, only the first range can be split, and the new interval
 +// must not have split positions
-+GreedyInterval* GreedyInterval::split_from_start(int split_pos) {
++Interval* Interval::split_from_start(int split_pos) {
 +  assert(Greedy::is_virtual_interval(this), "cannot split fixed intervals");
 +  assert(split_pos > from() && split_pos < to(), "can only split inside interval");
 +  assert(split_pos > _first->from() && split_pos <= _first->to(), "can only split inside first range");
 +  assert(first_usage(noUse) > split_pos, "can not split when use positions are present");
 +
 +  // allocate new interval
-+  GreedyInterval* result = new_split_child();
++  Interval* result = new_split_child();
 +
 +  // the new created interval has only one range (checked by assertion above),
 +  // so the splitting of the ranges is very simple
 +  result->add_range(_first->from(), split_pos);
 +
 +  if (split_pos == _first->to()) {
-+    assert(_first->next() != GreedyRange::end(), "must not be at end");
++    assert(_first->next() != Range::end(), "must not be at end");
 +    _first = _first->next();
 +  } else {
 +    _first->set_from(split_pos);
@@ -5950,13 +5958,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +// returns true if the op_id is inside the interval
-+bool GreedyInterval::covers(int op_id, LIR_OpVisitState::OprMode mode) const {
-+  GreedyRange* cur  = _first;
++bool Interval::covers(int op_id, LIR_OpVisitState::OprMode mode) const {
++  Range* cur  = _first;
 +
-+  while (cur != GreedyRange::end() && cur->to() < op_id) {
++  while (cur != Range::end() && cur->to() < op_id) {
 +    cur = cur->next();
 +  }
-+  if (cur != GreedyRange::end()) {
++  if (cur != Range::end()) {
 +    assert(cur->to() != cur->next()->from(), "ranges not separated");
 +
 +    if (mode == LIR_OpVisitState::outputMode) {
@@ -5970,12 +5978,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// returns true if the interval has any hole between hole_from and hole_to
 +// (even if the hole has only the length 1)
-+bool GreedyInterval::has_hole_between(int hole_from, int hole_to) {
++bool Interval::has_hole_between(int hole_from, int hole_to) {
 +  assert(hole_from < hole_to, "check");
 +  assert(from() <= hole_from && hole_to <= to(), "index out of interval");
 +
-+  GreedyRange* cur  = _first;
-+  while (cur != GreedyRange::end()) {
++  Range* cur  = _first;
++  while (cur != Range::end()) {
 +    assert(cur->to() < cur->next()->from(), "no space between ranges");
 +
 +    // hole-range starts before this range -> hole
@@ -5999,7 +6007,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +#ifndef PRODUCT
-+void GreedyInterval::print(outputStream* out) const {
++void Interval::print(outputStream* out) const {
 +  const char* SpillState2Name[] = { "no definition", "no spill store", "one spill store", "store at definition", "start in memory", "no optimization" };
 +  const char* UseKind2Name[] = { "N", "L", "S", "M" };
 +
@@ -6036,8 +6044,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  out->print("%d %d ", split_parent()->reg_num(), (register_hint(false) != NULL ? register_hint(false)->reg_num() : -1));
 +
 +  // print ranges
-+  GreedyRange* cur = _first;
-+  while (cur != GreedyRange::end()) {
++  Range* cur = _first;
++  while (cur != Range::end()) {
 +    cur->print(out);
 +    cur = cur->next();
 +    assert(cur != NULL, "range list not closed with range sentinel");
@@ -6061,18 +6069,18 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +
-+// **** Implementation of GreedyIntervalWalker ****************************
++// **** Implementation of IntervalWalker ****************************
 +
-+GreedyIntervalWalker::GreedyIntervalWalker(Greedy* allocator, GreedyInterval* unhandled_fixed_first, GreedyInterval* unhandled_any_first)
++IntervalWalker::IntervalWalker(Greedy* allocator, Interval* unhandled_fixed_first, Interval* unhandled_any_first)
 + : _compilation(allocator->compilation())
 + , _allocator(allocator)
 +{
 +  _unhandled_first[fixedKind] = unhandled_fixed_first;
 +  _unhandled_first[anyKind]   = unhandled_any_first;
-+  _active_first[fixedKind]    = GreedyInterval::end();
-+  _inactive_first[fixedKind]  = GreedyInterval::end();
-+  _active_first[anyKind]      = GreedyInterval::end();
-+  _inactive_first[anyKind]    = GreedyInterval::end();
++  _active_first[fixedKind]    = Interval::end();
++  _inactive_first[fixedKind]  = Interval::end();
++  _active_first[anyKind]      = Interval::end();
++  _inactive_first[anyKind]    = Interval::end();
 +  _current_position = -1;
 +  _current = NULL;
 +  next_interval();
@@ -6080,15 +6088,15 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +// append interval at top of list
-+void GreedyIntervalWalker::append_unsorted(GreedyInterval** list, GreedyInterval* interval) {
++void IntervalWalker::append_unsorted(Interval** list, Interval* interval) {
 +  interval->set_next(*list); *list = interval;
 +}
 +
 +
 +// append interval in order of current range from()
-+void GreedyIntervalWalker::append_sorted(GreedyInterval** list, GreedyInterval* interval) {
-+  GreedyInterval* prev = NULL;
-+  GreedyInterval* cur  = *list;
++void IntervalWalker::append_sorted(Interval** list, Interval* interval) {
++  Interval* prev = NULL;
++  Interval* cur  = *list;
 +  while (cur->current_from() < interval->current_from()) {
 +    prev = cur; cur = cur->next();
 +  }
@@ -6100,11 +6108,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  interval->set_next(cur);
 +}
 +
-+void GreedyIntervalWalker::append_to_unhandled(GreedyInterval** list, GreedyInterval* interval) {
++void IntervalWalker::append_to_unhandled(Interval** list, Interval* interval) {
 +  assert(interval->from() >= current()->current_from(), "cannot append new interval before current walk position");
 +
-+  GreedyInterval* prev = NULL;
-+  GreedyInterval* cur  = *list;
++  Interval* prev = NULL;
++  Interval* cur  = *list;
 +  while (cur->from() < interval->from() || (cur->from() == interval->from() && cur->first_usage(noUse) < interval->first_usage(noUse))) {
 +    prev = cur; cur = cur->next();
 +  }
@@ -6117,11 +6125,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+inline bool GreedyIntervalWalker::remove_from_list(GreedyInterval** list, GreedyInterval* i) {
-+  while (*list != GreedyInterval::end() && *list != i) {
++inline bool IntervalWalker::remove_from_list(Interval** list, Interval* i) {
++  while (*list != Interval::end() && *list != i) {
 +    list = (*list)->next_addr();
 +  }
-+  if (*list != GreedyInterval::end()) {
++  if (*list != Interval::end()) {
 +    assert(*list == i, "check");
 +    *list = (*list)->next();
 +    return true;
@@ -6130,7 +6138,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void GreedyIntervalWalker::remove_from_list(GreedyInterval* i) {
++void IntervalWalker::remove_from_list(Interval* i) {
 +  bool deleted;
 +
 +  if (i->state() == activeState) {
@@ -6144,13 +6152,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void GreedyIntervalWalker::walk_to(GreedyIntervalState state, int from) {
++void IntervalWalker::walk_to(IntervalState state, int from) {
 +  assert (state == activeState || state == inactiveState, "wrong state");
 +  for_each_interval_kind(kind) {
-+    GreedyInterval** prev = state == activeState ? active_first_addr(kind) : inactive_first_addr(kind);
-+    GreedyInterval* next   = *prev;
++    Interval** prev = state == activeState ? active_first_addr(kind) : inactive_first_addr(kind);
++    Interval* next   = *prev;
 +    while (next->current_from() <= from) {
-+      GreedyInterval* cur = next;
++      Interval* cur = next;
 +      next = cur->next();
 +
 +      bool range_has_changed = false;
@@ -6197,20 +6205,20 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void GreedyIntervalWalker::next_interval() {
-+  GreedyIntervalKind kind;
-+  GreedyInterval* any   = _unhandled_first[anyKind];
-+  GreedyInterval* fixed = _unhandled_first[fixedKind];
++void IntervalWalker::next_interval() {
++  IntervalKind kind;
++  Interval* any   = _unhandled_first[anyKind];
++  Interval* fixed = _unhandled_first[fixedKind];
 +
-+  if (any != GreedyInterval::end()) {
++  if (any != Interval::end()) {
 +    // intervals may start at same position -> prefer fixed interval
-+    kind = fixed != GreedyInterval::end() && fixed->from() <= any->from() ? fixedKind : anyKind;
++    kind = fixed != Interval::end() && fixed->from() <= any->from() ? fixedKind : anyKind;
 +
 +    assert (kind == fixedKind && fixed->from() <= any->from() ||
 +            kind == anyKind   && any->from() <= fixed->from(), "wrong interval!!!");
-+    assert(any == GreedyInterval::end() || fixed == GreedyInterval::end() || any->from() != fixed->from() || kind == fixedKind, "if fixed and any-GreedyInterval start at same position, fixed must be processed first");
++    assert(any == Interval::end() || fixed == Interval::end() || any->from() != fixed->from() || kind == fixedKind, "if fixed and any-Interval start at same position, fixed must be processed first");
 +
-+  } else if (fixed != GreedyInterval::end()) {
++  } else if (fixed != Interval::end()) {
 +    kind = fixedKind;
 +  } else {
 +    _current = NULL; return;
@@ -6218,12 +6226,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  _current_kind = kind;
 +  _current = _unhandled_first[kind];
 +  _unhandled_first[kind] = _current->next();
-+  _current->set_next(GreedyInterval::end());
++  _current->set_next(Interval::end());
 +  _current->rewind_range();
 +}
 +
 +
-+void GreedyIntervalWalker::walk_to(int lir_op_id) {
++void IntervalWalker::walk_to(int lir_op_id) {
 +  assert(_current_position <= lir_op_id, "can not walk backwards");
 +  while (current() != NULL) {
 +    bool is_active = current()->from() <= lir_op_id;
@@ -6252,7 +6260,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void GreedyIntervalWalker::interval_moved(GreedyInterval* interval, GreedyIntervalKind kind, GreedyIntervalState from, GreedyIntervalState to) {
++void IntervalWalker::interval_moved(Interval* interval, IntervalKind kind, IntervalState from, IntervalState to) {
 +#ifndef PRODUCT
 +  if (TraceGreedyLevel >= 4) {
 +    #define print_state(state) \
@@ -6277,12 +6285,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// **** Implementation of GreedyWalker **************************
 +
-+GreedyWalker::GreedyWalker(Greedy* allocator, GreedyInterval* unhandled_fixed_first, GreedyInterval* unhandled_any_first)
-+  : GreedyIntervalWalker(allocator, unhandled_fixed_first, unhandled_any_first)
++GreedyWalker::GreedyWalker(Greedy* allocator, Interval* unhandled_fixed_first, Interval* unhandled_any_first)
++  : IntervalWalker(allocator, unhandled_fixed_first, unhandled_any_first)
 +  , _move_resolver(allocator)
 +{
 +  for (int i = 0; i < Greedy::nof_regs; i++) {
-+    _spill_intervals[i] = new GreedyIntervalList(2);
++    _spill_intervals[i] = new IntervalList(2);
 +  }
 +}
 +
@@ -6304,14 +6312,14 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    _use_pos[reg] = 0;
 +  }
 +}
-+inline void GreedyWalker::exclude_from_use(GreedyInterval* i) {
++inline void GreedyWalker::exclude_from_use(Interval* i) {
 +  assert(i->assigned_reg() != any_reg, "interval has no register assigned");
 +
 +  exclude_from_use(i->assigned_reg());
 +  exclude_from_use(i->assigned_regHi());
 +}
 +
-+inline void GreedyWalker::set_use_pos(int reg, GreedyInterval* i, int use_pos, bool only_process_use_pos) {
++inline void GreedyWalker::set_use_pos(int reg, Interval* i, int use_pos, bool only_process_use_pos) {
 +  assert(use_pos != 0, "must use exclude_from_use to set use_pos to 0");
 +
 +  if (reg >= _first_reg && reg <= _last_reg) {
@@ -6323,7 +6331,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +  }
 +}
-+inline void GreedyWalker::set_use_pos(GreedyInterval* i, int use_pos, bool only_process_use_pos) {
++inline void GreedyWalker::set_use_pos(Interval* i, int use_pos, bool only_process_use_pos) {
 +  assert(i->assigned_reg() != any_reg, "interval has no register assigned");
 +  if (use_pos != -1) {
 +    set_use_pos(i->assigned_reg(), i, use_pos, only_process_use_pos);
@@ -6331,7 +6339,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+inline void GreedyWalker::set_block_pos(int reg, GreedyInterval* i, int block_pos) {
++inline void GreedyWalker::set_block_pos(int reg, Interval* i, int block_pos) {
 +  if (reg >= _first_reg && reg <= _last_reg) {
 +    if (_block_pos[reg] > block_pos) {
 +      _block_pos[reg] = block_pos;
@@ -6341,7 +6349,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    }
 +  }
 +}
-+inline void GreedyWalker::set_block_pos(GreedyInterval* i, int block_pos) {
++inline void GreedyWalker::set_block_pos(Interval* i, int block_pos) {
 +  assert(i->assigned_reg() != any_reg, "interval has no register assigned");
 +  if (block_pos != -1) {
 +    set_block_pos(i->assigned_reg(), i, block_pos);
@@ -6351,8 +6359,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +
 +void GreedyWalker::free_exclude_active_fixed() {
-+  GreedyInterval* list = active_first(fixedKind);
-+  while (list != GreedyInterval::end()) {
++  Interval* list = active_first(fixedKind);
++  while (list != Interval::end()) {
 +    assert(list->assigned_reg() < Greedy::nof_regs, "active interval must have a register assigned");
 +    exclude_from_use(list);
 +    list = list->next();
@@ -6360,16 +6368,16 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +void GreedyWalker::free_exclude_active_any() {
-+  GreedyInterval* list = active_first(anyKind);
-+  while (list != GreedyInterval::end()) {
++  Interval* list = active_first(anyKind);
++  while (list != Interval::end()) {
 +    exclude_from_use(list);
 +    list = list->next();
 +  }
 +}
 +
-+void GreedyWalker::free_collect_inactive_fixed(GreedyInterval* cur) {
-+  GreedyInterval* list = inactive_first(fixedKind);
-+  while (list != GreedyInterval::end()) {
++void GreedyWalker::free_collect_inactive_fixed(Interval* cur) {
++  Interval* list = inactive_first(fixedKind);
++  while (list != Interval::end()) {
 +    if (cur->to() <= list->current_from()) {
 +      assert(list->current_intersects_at(cur) == -1, "must not intersect");
 +      set_use_pos(list, list->current_from(), true);
@@ -6380,17 +6388,17 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+void GreedyWalker::free_collect_inactive_any(GreedyInterval* cur) {
-+  GreedyInterval* list = inactive_first(anyKind);
-+  while (list != GreedyInterval::end()) {
++void GreedyWalker::free_collect_inactive_any(Interval* cur) {
++  Interval* list = inactive_first(anyKind);
++  while (list != Interval::end()) {
 +    set_use_pos(list, list->current_intersects_at(cur), true);
 +    list = list->next();
 +  }
 +}
 +
-+void GreedyWalker::free_collect_unhandled(GreedyIntervalKind kind, GreedyInterval* cur) {
-+  GreedyInterval* list = unhandled_first(kind);
-+  while (list != GreedyInterval::end()) {
++void GreedyWalker::free_collect_unhandled(IntervalKind kind, Interval* cur) {
++  Interval* list = unhandled_first(kind);
++  while (list != Interval::end()) {
 +    set_use_pos(list, list->intersects_at(cur), true);
 +    if (kind == fixedKind && cur->to() <= list->from()) {
 +      set_use_pos(list, list->from(), true);
@@ -6400,24 +6408,24 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +void GreedyWalker::spill_exclude_active_fixed() {
-+  GreedyInterval* list = active_first(fixedKind);
-+  while (list != GreedyInterval::end()) {
++  Interval* list = active_first(fixedKind);
++  while (list != Interval::end()) {
 +    exclude_from_use(list);
 +    list = list->next();
 +  }
 +}
 +
-+void GreedyWalker::spill_block_unhandled_fixed(GreedyInterval* cur) {
-+  GreedyInterval* list = unhandled_first(fixedKind);
-+  while (list != GreedyInterval::end()) {
++void GreedyWalker::spill_block_unhandled_fixed(Interval* cur) {
++  Interval* list = unhandled_first(fixedKind);
++  while (list != Interval::end()) {
 +    set_block_pos(list, list->intersects_at(cur));
 +    list = list->next();
 +  }
 +}
 +
-+void GreedyWalker::spill_block_inactive_fixed(GreedyInterval* cur) {
-+  GreedyInterval* list = inactive_first(fixedKind);
-+  while (list != GreedyInterval::end()) {
++void GreedyWalker::spill_block_inactive_fixed(Interval* cur) {
++  Interval* list = inactive_first(fixedKind);
++  while (list != Interval::end()) {
 +    if (cur->to() > list->current_from()) {
 +      set_block_pos(list, list->current_intersects_at(cur));
 +    } else {
@@ -6429,16 +6437,16 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +void GreedyWalker::spill_collect_active_any() {
-+  GreedyInterval* list = active_first(anyKind);
-+  while (list != GreedyInterval::end()) {
++  Interval* list = active_first(anyKind);
++  while (list != Interval::end()) {
 +    set_use_pos(list, MIN2(list->next_usage(loopEndMarker, _current_position), list->to()), false);
 +    list = list->next();
 +  }
 +}
 +
-+void GreedyWalker::spill_collect_inactive_any(GreedyInterval* cur) {
-+  GreedyInterval* list = inactive_first(anyKind);
-+  while (list != GreedyInterval::end()) {
++void GreedyWalker::spill_collect_inactive_any(Interval* cur) {
++  Interval* list = inactive_first(anyKind);
++  while (list != Interval::end()) {
 +    if (list->current_intersects(cur)) {
 +      set_use_pos(list, MIN2(list->next_usage(loopEndMarker, _current_position), list->to()), false);
 +    }
@@ -6447,7 +6455,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void GreedyWalker::insert_move(int op_id, GreedyInterval* src_it, GreedyInterval* dst_it) {
++void GreedyWalker::insert_move(int op_id, Interval* src_it, Interval* dst_it) {
 +  // output all moves here. When source and target are equal, the move is
 +  // optimized away later in assign_reg_nums
 +
@@ -6508,7 +6516,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+int GreedyWalker::find_optimal_split_pos(GreedyInterval* it, int min_split_pos, int max_split_pos, bool do_loop_optimization) {
++int GreedyWalker::find_optimal_split_pos(Interval* it, int min_split_pos, int max_split_pos, bool do_loop_optimization) {
 +  int optimal_split_pos = -1;
 +  if (min_split_pos == max_split_pos) {
 +    // trivial case, no optimization of split position possible
@@ -6538,7 +6546,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +    } else if (it->has_hole_between(max_split_pos - 1, max_split_pos) && !allocator()->is_block_begin(max_split_pos)) {
 +      // Do not move split position if the interval has a hole before max_split_pos.
-+      // GreedyIntervals resulting from Phi-Functions have more than one definition (marked
++      // Intervals resulting from Phi-Functions have more than one definition (marked
 +      // as mustHaveRegister) with a hole before each definition. When the register is needed
 +      // for the second definition, an earlier reloading is unnecessary.
 +      TRACE_GREEDY(4, tty->print_cr("      interval has hole just before max_split_pos, so splitting at max_split_pos"));
@@ -6594,7 +6602,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  1) the left part has already a location assigned
 +  2) the right part is sorted into to the unhandled-list
 +*/
-+void GreedyWalker::split_before_usage(GreedyInterval* it, int min_split_pos, int max_split_pos) {
++void GreedyWalker::split_before_usage(Interval* it, int min_split_pos, int max_split_pos) {
 +  TRACE_GREEDY(2, tty->print   ("----- splitting interval: "); it->print());
 +  TRACE_GREEDY(2, tty->print_cr("      between %d and %d", min_split_pos, max_split_pos));
 +
@@ -6628,7 +6636,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  assert(allocator()->is_block_begin(optimal_split_pos) || (optimal_split_pos % 2 == 1), "split pos must be odd when not on block boundary");
 +  assert(!allocator()->is_block_begin(optimal_split_pos) || (optimal_split_pos % 2 == 0), "split pos must be even on block boundary");
 +
-+  GreedyInterval* split_part = it->split(optimal_split_pos);
++  Interval* split_part = it->split(optimal_split_pos);
 +
 +  allocator()->append_interval(split_part);
 +  allocator()->copy_register_flags(it, split_part);
@@ -6646,7 +6654,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  1) the left part has already a location assigned
 +  2) the right part is always on the stack and therefore ignored in further processing
 +*/
-+void GreedyWalker::split_for_spilling(GreedyInterval* it) {
++void GreedyWalker::split_for_spilling(Interval* it) {
 +  // calculate allowed range of splitting position
 +  int max_split_pos = current_position();
 +  int min_split_pos = MAX2(it->previous_usage(shouldHaveRegister, max_split_pos) + 1, it->from());
@@ -6671,7 +6679,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    // Also kick parent intervals out of register to memory when they have no use
 +    // position. This avoids short interval in register surrounded by intervals in
 +    // memory -> avoid useless moves from memory to register and back
-+    GreedyInterval* parent = it;
++    Interval* parent = it;
 +    while (parent != NULL && parent->is_split_child()) {
 +      parent = parent->split_child_before_op_id(parent->from());
 +
@@ -6704,7 +6712,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    assert(allocator()->is_block_begin(optimal_split_pos)  || (optimal_split_pos % 2 == 1), "split pos must be odd when not on block boundary");
 +    assert(!allocator()->is_block_begin(optimal_split_pos) || (optimal_split_pos % 2 == 0), "split pos must be even on block boundary");
 +
-+    GreedyInterval* spilled_part = it->split(optimal_split_pos);
++    Interval* spilled_part = it->split(optimal_split_pos);
 +    allocator()->append_interval(spilled_part);
 +    allocator()->assign_spill_slot(spilled_part);
 +    allocator()->change_spill_state(spilled_part, optimal_split_pos);
@@ -6725,21 +6733,21 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+void GreedyWalker::split_stack_interval(GreedyInterval* it) {
++void GreedyWalker::split_stack_interval(Interval* it) {
 +  int min_split_pos = current_position() + 1;
 +  int max_split_pos = MIN2(it->first_usage(shouldHaveRegister), it->to());
 +
 +  split_before_usage(it, min_split_pos, max_split_pos);
 +}
 +
-+void GreedyWalker::split_when_partial_register_available(GreedyInterval* it, int register_available_until) {
++void GreedyWalker::split_when_partial_register_available(Interval* it, int register_available_until) {
 +  int min_split_pos = MAX2(it->previous_usage(shouldHaveRegister, register_available_until), it->from() + 1);
 +  int max_split_pos = register_available_until;
 +
 +  split_before_usage(it, min_split_pos, max_split_pos);
 +}
 +
-+void GreedyWalker::split_and_spill_interval(GreedyInterval* it) {
++void GreedyWalker::split_and_spill_interval(Interval* it) {
 +  assert(it->state() == activeState || it->state() == inactiveState, "other states not allowed");
 +
 +  int current_pos = current_position();
@@ -6828,7 +6836,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+bool GreedyWalker::alloc_free_reg(GreedyInterval* cur) {
++bool GreedyWalker::alloc_free_reg(Interval* cur) {
 +  TRACE_GREEDY(2, tty->print("trying to find free register for "); cur->print());
 +
 +  init_use_lists(true);
@@ -6837,7 +6845,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  free_collect_inactive_fixed(cur);
 +  free_collect_inactive_any(cur);
 +//  free_collect_unhandled(fixedKind, cur);
-+  assert(unhandled_first(fixedKind) == GreedyInterval::end(), "must not have unhandled fixed intervals because all fixed intervals have a use at position 0");
++  assert(unhandled_first(fixedKind) == Interval::end(), "must not have unhandled fixed intervals because all fixed intervals have a use at position 0");
 +
 +  // _use_pos contains the start of the next interval that has this register assigned
 +  // (either as a fixed register or a normal allocated register in the past)
@@ -6846,7 +6854,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  TRACE_GREEDY(4, for (int i = _first_reg; i <= _last_reg; i++) tty->print_cr("      reg %d: use_pos: %d", i, _use_pos[i]));
 +
 +  int hint_reg, hint_regHi;
-+  GreedyInterval* register_hint = cur->register_hint();
++  Interval* register_hint = cur->register_hint();
 +  if (register_hint != NULL) {
 +    hint_reg = register_hint->assigned_reg();
 +    hint_regHi = register_hint->assigned_regHi();
@@ -6969,15 +6977,15 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  assert(reg != any_reg, "no register assigned");
 +
 +  for (int i = 0; i < _spill_intervals[reg]->length(); i++) {
-+    GreedyInterval* it = _spill_intervals[reg]->at(i);
++    Interval* it = _spill_intervals[reg]->at(i);
 +    remove_from_list(it);
 +    split_and_spill_interval(it);
 +  }
 +
 +  if (regHi != any_reg) {
-+    GreedyIntervalList* processed = _spill_intervals[reg];
++    IntervalList* processed = _spill_intervals[reg];
 +    for (int i = 0; i < _spill_intervals[regHi]->length(); i++) {
-+      GreedyInterval* it = _spill_intervals[regHi]->at(i);
++      Interval* it = _spill_intervals[regHi]->at(i);
 +      if (processed->index_of(it) == -1) {
 +        remove_from_list(it);
 +        split_and_spill_interval(it);
@@ -6987,15 +6995,15 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+// Split an GreedyInterval and spill it to memory so that cur can be placed in a register
-+void GreedyWalker::alloc_locked_reg(GreedyInterval* cur) {
++// Split an Interval and spill it to memory so that cur can be placed in a register
++void GreedyWalker::alloc_locked_reg(Interval* cur) {
 +  TRACE_GREEDY(2, tty->print("need to split and spill to get register for "); cur->print());
 +
 +  // collect current usage of registers
 +  init_use_lists(false);
 +  spill_exclude_active_fixed();
 +//  spill_block_unhandled_fixed(cur);
-+  assert(unhandled_first(fixedKind) == GreedyInterval::end(), "must not have unhandled fixed intervals because all fixed intervals have a use at position 0");
++  assert(unhandled_first(fixedKind) == Interval::end(), "must not have unhandled fixed intervals because all fixed intervals have a use at position 0");
 +  spill_block_inactive_fixed(cur);
 +  spill_collect_active_any();
 +  spill_collect_inactive_any(cur);
@@ -7090,7 +7098,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  }
 +}
 +
-+bool GreedyWalker::no_allocation_possible(GreedyInterval* cur) {
++bool GreedyWalker::no_allocation_possible(Interval* cur) {
 +#ifdef X86
 +  // fast calculation of intervals that can never get a register because the
 +  // the next instruction is a call that blocks all registers
@@ -7114,7 +7122,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +  return false;
 +}
 +
-+void GreedyWalker::init_vars_for_alloc(GreedyInterval* cur) {
++void GreedyWalker::init_vars_for_alloc(Interval* cur) {
 +  BasicType type = cur->type();
 +  _num_phys_regs = Greedy::num_physical_regs(type);
 +  _adjacent_regs = Greedy::requires_adjacent_regs(type);
@@ -7134,7 +7142,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +
-+bool GreedyWalker::is_move(LIR_Op* op, GreedyInterval* from, GreedyInterval* to) {
++bool GreedyWalker::is_move(LIR_Op* op, Interval* from, Interval* to) {
 +  if (op->code() != lir_move) {
 +    return false;
 +  }
@@ -7147,13 +7155,13 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// optimization (especially for phi functions of nested loops):
 +// assign same spill slot to non-intersecting intervals
-+void GreedyWalker::combine_spilled_intervals(GreedyInterval* cur) {
++void GreedyWalker::combine_spilled_intervals(Interval* cur) {
 +  if (cur->is_split_child()) {
 +    // optimization is only suitable for split parents
 +    return;
 +  }
 +
-+  GreedyInterval* register_hint = cur->register_hint(false);
++  Interval* register_hint = cur->register_hint(false);
 +  if (register_hint == NULL) {
 +    // cur is not the target of a move, otherwise register_hint would be set
 +    return;
@@ -7178,8 +7186,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    return;
 +  }
 +
-+  GreedyInterval* begin_hint = register_hint->split_child_at_op_id(begin_pos, LIR_OpVisitState::inputMode);
-+  GreedyInterval* end_hint = register_hint->split_child_at_op_id(end_pos, LIR_OpVisitState::outputMode);
++  Interval* begin_hint = register_hint->split_child_at_op_id(begin_pos, LIR_OpVisitState::inputMode);
++  Interval* end_hint = register_hint->split_child_at_op_id(end_pos, LIR_OpVisitState::outputMode);
 +  if (begin_hint == end_hint || begin_hint->to() != begin_pos || end_hint->from() != end_pos) {
 +    // register_hint must be split, otherwise the re-writing of use positions does not work
 +    return;
@@ -7206,7 +7214,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +// allocate a physical register or memory location to an interval
 +bool GreedyWalker::activate_current() {
-+  GreedyInterval* cur = current();
++  Interval* cur = current();
 +  bool result = true;
 +
 +  TRACE_GREEDY(2, tty->print   ("+++++ activating interval "); cur->print());
@@ -7945,7 +7953,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +
 +  int i;
 +  for (i = 0; i < allocator->interval_count(); i++) {
-+    GreedyInterval* cur = allocator->interval_at(i);
++    Interval* cur = allocator->interval_at(i);
 +
 +    if (cur != NULL) {
 +      inc_counter(counter_interval);
@@ -7955,8 +7963,8 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +        inc_counter(counter_fixed_use_pos, cur->num_use_positions());
 +      }
 +
-+      GreedyRange* range = cur->first();
-+      while (range != GreedyRange::end()) {
++      Range* range = cur->first();
++      while (range != Range::end()) {
 +        inc_counter(counter_range);
 +        if (Greedy::is_precolored_interval(cur)) {
 +          inc_counter(counter_fixed_range);
@@ -8135,11 +8143,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +    case timer_number_instructions:      return "Number Instructions";
 +    case timer_compute_local_live_sets:  return "Local Live Sets";
 +    case timer_compute_global_live_sets: return "Global Live Sets";
-+    case timer_build_intervals:          return "Build GreedyIntervals";
-+    case timer_sort_intervals_before:    return "Sort GreedyIntervals Before";
++    case timer_build_intervals:          return "Build Intervals";
++    case timer_sort_intervals_before:    return "Sort Intervals Before";
 +    case timer_allocate_registers:       return "Allocate Registers";
 +    case timer_resolve_data_flow:        return "Resolve Data Flow";
-+    case timer_sort_intervals_after:     return "Sort GreedyIntervals After";
++    case timer_sort_intervals_after:     return "Sort Intervals After";
 +    case timer_eliminate_spill_moves:    return "Spill optimization";
 +    case timer_assign_reg_num:           return "Assign Reg Num";
 +    case timer_allocate_fpu_stack:       return "Allocate FPU Stack";
@@ -8201,10 +8209,12 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.cpp
 +}
 +
 +#endif // #ifndef PRODUCT
-diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
++
++} // end namespace greedy
+diff -r 33a61051088d src/share/vm/c1/c1_Greedy.hpp
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/src/share/vm/c1/c1_Greedy.hpp	Sat Mar 24 12:06:20 2018 +0800
-@@ -0,0 +1,990 @@
++++ b/src/share/vm/c1/c1_Greedy.hpp	Sat Mar 24 20:57:05 2018 +0800
+@@ -0,0 +1,995 @@
 +/*
 + * Copyright (c) 2005, 2012, Oracle and/or its affiliates. All rights reserved.
 + * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -8239,21 +8249,24 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +#include "c1/c1_LIR.hpp"
 +#include "c1/c1_LIRGenerator.hpp"
 +
-+class DebugInfoCache;
-+class GreedyFpuStackAllocator;
 +class IRScopeDebugInfo;
-+class GreedyInterval;
-+class GreedyIntervalWalker;
 +class LIRGenerator;
++
++namespace greedy {
++
++class DebugInfoCache;
++class FpuStackAllocator;
++class Interval;
++class IntervalWalker;
 +class Greedy;
-+class GreedyMoveResolver;
-+class GreedyRange;
++class MoveResolver;
++class Range;
 +
-+define_array(GreedyIntervalArray, GreedyInterval*)
-+define_stack(GreedyIntervalList, GreedyIntervalArray)
++define_array(IntervalArray, Interval*)
++define_stack(IntervalList, IntervalArray)
 +
-+define_array(GreedyIntervalsArray, GreedyIntervalList*)
-+define_stack(GreedyIntervalsList, GreedyIntervalsArray)
++define_array(IntervalsArray, IntervalList*)
++define_stack(IntervalsList, IntervalsArray)
 +
 +define_array(GreedyOopMapArray, OopMap*)
 +define_stack(GreedyOopMapList, GreedyOopMapArray)
@@ -8264,7 +8277,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +define_stack(GreedyLIR_OpListStack, GreedyLIR_OpListArray);
 +
 +
-+enum GreedyIntervalUseKind {
++enum IntervalUseKind {
 +  // priority of use kinds must be ascending
 +  noUse = 0,
 +  loopEndMarker = 1,
@@ -8274,11 +8287,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  firstValidKind = 1,
 +  lastValidKind = 3
 +};
-+define_array(UseKindArray, GreedyIntervalUseKind)
++define_array(UseKindArray, IntervalUseKind)
 +define_stack(UseKindStack, UseKindArray)
 +
 +
-+enum GreedyIntervalKind {
++enum IntervalKind {
 +  fixedKind = 0,  // interval pre-colored by LIR_Generator
 +  anyKind   = 1,  // no register/memory allocated by LIR_Generator
 +  nofKinds,
@@ -8287,7 +8300,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +
 +// during greedy an interval is in one of four states in
-+enum GreedyIntervalState {
++enum IntervalState {
 +  unhandledState = 0, // unhandled state (not processed yet)
 +  activeState   = 1,  // life and is in a physical register
 +  inactiveState = 2,  // in a life time hole and is in a physical register
@@ -8296,7 +8309,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +};
 +
 +
-+enum GreedyIntervalSpillState {
++enum IntervalSpillState {
 +  noDefinitionFound,  // starting state of calculation: no definition found yet
 +  oneDefinitionFound, // one definition has already been found.
 +                      // Note: two consecutive definitions are treated as one (e.g. consecutive move and add because of two-operand LIR form)
@@ -8310,7 +8323,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +
 +#define for_each_interval_kind(kind) \
-+  for (GreedyIntervalKind kind = firstKind; kind < nofKinds; kind = (GreedyIntervalKind)(kind + 1))
++  for (IntervalKind kind = firstKind; kind < nofKinds; kind = (IntervalKind)(kind + 1))
 +
 +#define for_each_visitor_mode(mode) \
 +  for (LIR_OpVisitState::OprMode mode = LIR_OpVisitState::firstMode; mode < LIR_OpVisitState::numModes; mode = (LIR_OpVisitState::OprMode)(mode + 1))
@@ -8321,11 +8334,11 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  // need a wide variety of functions declared here
 +  //
 +  // Only the small interface to the rest of the compiler is public
-+  friend class GreedyInterval;
-+  friend class GreedyIntervalWalker;
++  friend class Interval;
++  friend class IntervalWalker;
 +  friend class GreedyWalker;
-+  friend class GreedyFpuStackAllocator;
-+  friend class GreedyMoveResolver;
++  friend class FpuStackAllocator;
++  friend class MoveResolver;
 +  friend class GreedyStatistic;
 +  friend class GreedyTimers;
 +  friend class GreedyRegisterVerifier;
@@ -8352,10 +8365,10 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  int                       _max_spills;        // number of stack slots used for intervals allocated to memory
 +  int                       _unused_spill_slot; // unused spill slot for a single-word value because of alignment of a double-word value
 +
-+  GreedyIntervalList              _intervals;         // mapping from register number to interval
-+  GreedyIntervalList*             _new_intervals_from_allocation; // list with all intervals created during allocation when an existing interval is split
-+  GreedyIntervalArray*            _sorted_intervals;  // intervals sorted by GreedyInterval::from()
-+  bool                      _needs_full_resort; // set to true if an GreedyInterval::from() is changed and _sorted_intervals must be resorted
++  IntervalList              _intervals;         // mapping from register number to interval
++  IntervalList*             _new_intervals_from_allocation; // list with all intervals created during allocation when an existing interval is split
++  IntervalArray*            _sorted_intervals;  // intervals sorted by Interval::from()
++  bool                      _needs_full_resort; // set to true if an Interval::from() is changed and _sorted_intervals must be resorted
 +
 +  LIR_OpArray               _lir_ops;           // mapping from LIR_Op id to LIR_Op node
 +  BlockBeginArray           _block_of_op;       // mapping from LIR_Op id to the BlockBegin containing this instruction
@@ -8396,7 +8409,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +  // handling of fpu stack allocation (platform dependent, needed for debug information generation)
 +#ifdef X86
-+  GreedyFpuStackAllocator* _fpu_stack_allocator;
++  FpuStackAllocator* _fpu_stack_allocator;
 +  bool use_fpu_stack_allocation() const          { return UseSSE < 2 && has_fpu_registers(); }
 +#else
 +  bool use_fpu_stack_allocation() const          { return false; }
@@ -8405,9 +8418,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +  // access to interval list
 +  int           interval_count() const           { return _intervals.length(); }
-+  GreedyInterval*     interval_at(int reg_num) const   { return _intervals.at(reg_num); }
++  Interval*     interval_at(int reg_num) const   { return _intervals.at(reg_num); }
 +
-+  GreedyIntervalList* new_intervals_from_allocation() const { return _new_intervals_from_allocation; }
++  IntervalList* new_intervals_from_allocation() const { return _new_intervals_from_allocation; }
 +
 +  // access to LIR_Ops and Blocks indexed by op_id
 +  int          max_lir_op_id() const                { assert(_lir_ops.length() > 0, "no operations"); return (_lir_ops.length() - 1) << 1; }
@@ -8427,26 +8440,26 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  static int  reg_numHi(LIR_Opr opr);
 +
 +  // functions for classification of intervals
-+  static bool is_precolored_interval(const GreedyInterval* i);
-+  static bool is_virtual_interval(const GreedyInterval* i);
++  static bool is_precolored_interval(const Interval* i);
++  static bool is_virtual_interval(const Interval* i);
 +
-+  static bool is_precolored_cpu_interval(const GreedyInterval* i);
-+  static bool is_virtual_cpu_interval(const GreedyInterval* i);
-+  static bool is_precolored_fpu_interval(const GreedyInterval* i);
-+  static bool is_virtual_fpu_interval(const GreedyInterval* i);
++  static bool is_precolored_cpu_interval(const Interval* i);
++  static bool is_virtual_cpu_interval(const Interval* i);
++  static bool is_precolored_fpu_interval(const Interval* i);
++  static bool is_virtual_fpu_interval(const Interval* i);
 +
-+  static bool is_in_fpu_register(const GreedyInterval* i);
-+  static bool is_oop_interval(const GreedyInterval* i);
++  static bool is_in_fpu_register(const Interval* i);
++  static bool is_oop_interval(const Interval* i);
 +
 +
 +  // General helper functions
 +  int         allocate_spill_slot(bool double_word);
-+  void        assign_spill_slot(GreedyInterval* it);
++  void        assign_spill_slot(Interval* it);
 +  void        propagate_spill_slots();
 +
-+  GreedyInterval*   create_interval(int reg_num);
-+  void        append_interval(GreedyInterval* it);
-+  void        copy_register_flags(GreedyInterval* from, GreedyInterval* to);
++  Interval*   create_interval(int reg_num);
++  void        append_interval(Interval* it);
++  void        copy_register_flags(Interval* from, Interval* to);
 +
 +  // platform dependent functions
 +  static bool is_processed_reg_num(int reg_num);
@@ -8456,9 +8469,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +  // spill move optimization: eliminate moves from register to stack if
 +  // stack slot is known to be correct
-+  void        change_spill_definition_pos(GreedyInterval* interval, int def_pos);
-+  void        change_spill_state(GreedyInterval* interval, int spill_pos);
-+  static bool must_store_at_definition(const GreedyInterval* i);
++  void        change_spill_definition_pos(Interval* interval, int def_pos);
++  void        change_spill_state(Interval* interval, int spill_pos);
++  static bool must_store_at_definition(const Interval* i);
 +  void        eliminate_spill_moves();
 +
 +  // Phase 1: number all instructions in all blocks
@@ -8481,22 +8494,22 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  // (fills the list _intervals)
 +  //
 +  // helper methods used by build_intervals()
-+  void add_use (Value value, int from, int to, GreedyIntervalUseKind use_kind);
++  void add_use (Value value, int from, int to, IntervalUseKind use_kind);
 +
-+  void add_def (LIR_Opr opr, int def_pos,      GreedyIntervalUseKind use_kind);
-+  void add_use (LIR_Opr opr, int from, int to, GreedyIntervalUseKind use_kind);
-+  void add_temp(LIR_Opr opr, int temp_pos,     GreedyIntervalUseKind use_kind);
++  void add_def (LIR_Opr opr, int def_pos,      IntervalUseKind use_kind);
++  void add_use (LIR_Opr opr, int from, int to, IntervalUseKind use_kind);
++  void add_temp(LIR_Opr opr, int temp_pos,     IntervalUseKind use_kind);
 +
-+  void add_def (int reg_num, int def_pos,      GreedyIntervalUseKind use_kind, BasicType type);
-+  void add_use (int reg_num, int from, int to, GreedyIntervalUseKind use_kind, BasicType type);
-+  void add_temp(int reg_num, int temp_pos,     GreedyIntervalUseKind use_kind, BasicType type);
++  void add_def (int reg_num, int def_pos,      IntervalUseKind use_kind, BasicType type);
++  void add_use (int reg_num, int from, int to, IntervalUseKind use_kind, BasicType type);
++  void add_temp(int reg_num, int temp_pos,     IntervalUseKind use_kind, BasicType type);
 +
 +  // Add platform dependent kills for particular LIR ops.  Can be used
 +  // to add platform dependent behaviour for some operations.
 +  void pd_add_temps(LIR_Op* op);
 +
-+  GreedyIntervalUseKind use_kind_of_output_operand(LIR_Op* op, LIR_Opr opr);
-+  GreedyIntervalUseKind use_kind_of_input_operand(LIR_Op* op, LIR_Opr opr);
++  IntervalUseKind use_kind_of_output_operand(LIR_Op* op, LIR_Opr opr);
++  IntervalUseKind use_kind_of_input_operand(LIR_Op* op, LIR_Opr opr);
 +  void handle_method_arguments(LIR_Op* op);
 +  void handle_doubleword_moves(LIR_Op* op);
 +  void add_register_hints(LIR_Op* op);
@@ -8508,10 +8521,10 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  // (Uses GreedyWalker)
 +  //
 +  // helper functions for building a sorted list of intervals
-+  NOT_PRODUCT(bool is_sorted(GreedyIntervalArray* intervals);)
-+  static int interval_cmp(GreedyInterval** a, GreedyInterval** b);
-+  void add_to_list(GreedyInterval** first, GreedyInterval** prev, GreedyInterval* interval);
-+  void create_unhandled_lists(GreedyInterval** list1, GreedyInterval** list2, bool (is_list1)(const GreedyInterval* i), bool (is_list2)(const GreedyInterval* i));
++  NOT_PRODUCT(bool is_sorted(IntervalArray* intervals);)
++  static int interval_cmp(Interval** a, Interval** b);
++  void add_to_list(Interval** first, Interval** prev, Interval* interval);
++  void create_unhandled_lists(Interval** list1, Interval** list2, bool (is_list1)(const Interval* i), bool (is_list2)(const Interval* i));
 +
 +  void sort_intervals_before_allocation();
 +  void sort_intervals_after_allocation();
@@ -8522,37 +8535,37 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  // (insert moves at edges between blocks if intervals have been split)
 +  //
 +  // helper functions for resolve_data_flow()
-+  GreedyInterval* split_child_at_op_id(GreedyInterval* interval, int op_id, LIR_OpVisitState::OprMode mode);
-+  GreedyInterval* interval_at_block_begin(BlockBegin* block, int reg_num);
-+  GreedyInterval* interval_at_block_end(BlockBegin* block, int reg_num);
-+  GreedyInterval* interval_at_op_id(int reg_num, int op_id);
-+  void resolve_collect_mappings(BlockBegin* from_block, BlockBegin* to_block, GreedyMoveResolver &move_resolver);
-+  void resolve_find_insert_pos(BlockBegin* from_block, BlockBegin* to_block, GreedyMoveResolver &move_resolver);
++  Interval* split_child_at_op_id(Interval* interval, int op_id, LIR_OpVisitState::OprMode mode);
++  Interval* interval_at_block_begin(BlockBegin* block, int reg_num);
++  Interval* interval_at_block_end(BlockBegin* block, int reg_num);
++  Interval* interval_at_op_id(int reg_num, int op_id);
++  void resolve_collect_mappings(BlockBegin* from_block, BlockBegin* to_block, MoveResolver &move_resolver);
++  void resolve_find_insert_pos(BlockBegin* from_block, BlockBegin* to_block, MoveResolver &move_resolver);
 +  void resolve_data_flow();
 +
-+  void resolve_exception_entry(BlockBegin* block, int reg_num, GreedyMoveResolver &move_resolver);
-+  void resolve_exception_entry(BlockBegin* block, GreedyMoveResolver &move_resolver);
-+  void resolve_exception_edge(XHandler* handler, int throwing_op_id, int reg_num, Phi* phi, GreedyMoveResolver &move_resolver);
-+  void resolve_exception_edge(XHandler* handler, int throwing_op_id, GreedyMoveResolver &move_resolver);
++  void resolve_exception_entry(BlockBegin* block, int reg_num, MoveResolver &move_resolver);
++  void resolve_exception_entry(BlockBegin* block, MoveResolver &move_resolver);
++  void resolve_exception_edge(XHandler* handler, int throwing_op_id, int reg_num, Phi* phi, MoveResolver &move_resolver);
++  void resolve_exception_edge(XHandler* handler, int throwing_op_id, MoveResolver &move_resolver);
 +  void resolve_exception_handlers();
 +
 +  // Phase 7: assign register numbers back to LIR
 +  // (includes computation of debug information and oop maps)
 +  //
 +  // helper functions for assign_reg_num()
-+  VMReg vm_reg_for_interval(GreedyInterval* interval);
++  VMReg vm_reg_for_interval(Interval* interval);
 +  VMReg vm_reg_for_operand(LIR_Opr opr);
 +
-+  static LIR_Opr operand_for_interval(GreedyInterval* interval);
-+  static LIR_Opr calc_operand_for_interval(const GreedyInterval* interval);
-+  LIR_Opr       canonical_spill_opr(GreedyInterval* interval);
++  static LIR_Opr operand_for_interval(Interval* interval);
++  static LIR_Opr calc_operand_for_interval(const Interval* interval);
++  LIR_Opr       canonical_spill_opr(Interval* interval);
 +
 +  LIR_Opr color_lir_opr(LIR_Opr opr, int id, LIR_OpVisitState::OprMode);
 +
 +  // methods used for oop map computation
-+  GreedyIntervalWalker* init_compute_oop_maps();
-+  OopMap*         compute_oop_map(GreedyIntervalWalker* iw, LIR_Op* op, CodeEmitInfo* info, bool is_call_site);
-+  void            compute_oop_map(GreedyIntervalWalker* iw, const LIR_OpVisitState &visitor, LIR_Op* op);
++  IntervalWalker* init_compute_oop_maps();
++  OopMap*         compute_oop_map(IntervalWalker* iw, LIR_Op* op, CodeEmitInfo* info, bool is_call_site);
++  void            compute_oop_map(IntervalWalker* iw, const LIR_OpVisitState &visitor, LIR_Op* op);
 +
 +  // methods used for debug information computation
 +  void init_compute_debug_info();
@@ -8574,7 +8587,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  IRScopeDebugInfo* compute_debug_info_for_scope(int op_id, IRScope* cur_scope, ValueStack* cur_state, ValueStack* innermost_state);
 +  void compute_debug_info(CodeEmitInfo* info, int op_id);
 +
-+  void assign_reg_num(LIR_OpList* instructions, GreedyIntervalWalker* iw);
++  void assign_reg_num(LIR_OpList* instructions, IntervalWalker* iw);
 +  void assign_reg_num();
 +
 +
@@ -8626,7 +8639,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +// dependencies, a temporary stack slot is used to break the circle.
 +// The same logic is used in the GreedyWalker and in Greedy during resolve_data_flow
 +// and therefore factored out in a separate class
-+class GreedyMoveResolver: public StackObj {
++class MoveResolver: public StackObj {
 + private:
 +  Greedy*      _allocator;
 +
@@ -8634,35 +8647,35 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  int              _insert_idx;
 +  LIR_InsertionBuffer _insertion_buffer; // buffer where moves are inserted
 +
-+  GreedyIntervalList     _mapping_from;
++  IntervalList     _mapping_from;
 +  LIR_OprList      _mapping_from_opr;
-+  GreedyIntervalList     _mapping_to;
++  IntervalList     _mapping_to;
 +  bool             _multiple_reads_allowed;
 +  int              _register_blocked[Greedy::nof_regs];
 +
 +  int  register_blocked(int reg)                    { assert(reg >= 0 && reg < Greedy::nof_regs, "out of bounds"); return _register_blocked[reg]; }
 +  void set_register_blocked(int reg, int direction) { assert(reg >= 0 && reg < Greedy::nof_regs, "out of bounds"); assert(direction == 1 || direction == -1, "out of bounds"); _register_blocked[reg] += direction; }
 +
-+  void block_registers(GreedyInterval* it);
-+  void unblock_registers(GreedyInterval* it);
-+  bool save_to_process_move(GreedyInterval* from, GreedyInterval* to);
++  void block_registers(Interval* it);
++  void unblock_registers(Interval* it);
++  bool save_to_process_move(Interval* from, Interval* to);
 +
 +  void create_insertion_buffer(LIR_List* list);
 +  void append_insertion_buffer();
-+  void insert_move(GreedyInterval* from_interval, GreedyInterval* to_interval);
-+  void insert_move(LIR_Opr from_opr, GreedyInterval* to_interval);
++  void insert_move(Interval* from_interval, Interval* to_interval);
++  void insert_move(LIR_Opr from_opr, Interval* to_interval);
 +
 +  DEBUG_ONLY(void verify_before_resolve();)
 +  void resolve_mappings();
 + public:
-+  GreedyMoveResolver(Greedy* allocator);
++  MoveResolver(Greedy* allocator);
 +
 +  DEBUG_ONLY(void check_empty();)
 +  void set_multiple_reads_allowed() { _multiple_reads_allowed = true; }
 +  void set_insert_position(LIR_List* insert_list, int insert_idx);
 +  void move_insert_position(LIR_List* insert_list, int insert_idx);
-+  void add_mapping(GreedyInterval* from, GreedyInterval* to);
-+  void add_mapping(LIR_Opr from, GreedyInterval* to);
++  void add_mapping(Interval* from, Interval* to);
++  void add_mapping(LIR_Opr from, Interval* to);
 +  void resolve_and_append_moves();
 +
 +  Greedy* allocator()   { return _allocator; }
@@ -8670,39 +8683,39 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +};
 +
 +
-+class GreedyRange : public CompilationResourceObj {
-+  friend class GreedyInterval;
++class Range : public CompilationResourceObj {
++  friend class Interval;
 +
 + private:
-+  static GreedyRange*    _end;       // sentinel (from == to == max_jint)
++  static Range*    _end;       // sentinel (from == to == max_jint)
 +
 +  int              _from;      // from (inclusive)
 +  int              _to;        // to (exclusive)
-+  GreedyRange*           _next;      // greedy list of GreedyRanges
++  Range*           _next;      // greedy list of Ranges
 +
-+  // used only by class GreedyInterval, so hide them
-+  bool             intersects(GreedyRange* r) const    { return intersects_at(r) != -1; }
-+  int              intersects_at(GreedyRange* r) const;
++  // used only by class Interval, so hide them
++  bool             intersects(Range* r) const    { return intersects_at(r) != -1; }
++  int              intersects_at(Range* r) const;
 +
 + public:
-+  GreedyRange(int from, int to, GreedyRange* next);
++  Range(int from, int to, Range* next);
 +
 +  static void      initialize(Arena* arena);
-+  static GreedyRange*    end()                         { return _end; }
++  static Range*    end()                         { return _end; }
 +
 +  int              from() const                  { return _from; }
 +  int              to()   const                  { return _to; }
-+  GreedyRange*           next() const                  { return _next; }
++  Range*           next() const                  { return _next; }
 +  void             set_from(int from)            { _from = from; }
 +  void             set_to(int to)                { _to = to; }
-+  void             set_next(GreedyRange* next)         { _next = next; }
++  void             set_next(Range* next)         { _next = next; }
 +
 +  // for testing
 +  void             print(outputStream* out = tty) const PRODUCT_RETURN;
 +};
 +
 +
-+// GreedyInterval is an ordered list of disjoint ranges.
++// Interval is an ordered list of disjoint ranges.
 +
 +// For pre-colored double word LIR_Oprs, one interval is created for
 +// the low word register and one is created for the hi word register.
@@ -8718,18 +8731,18 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +// intervals assigned_reg contains the stack index.  assigned_regHi is
 +// always -1.
 +
-+class GreedyInterval : public CompilationResourceObj {
++class Interval : public CompilationResourceObj {
 + private:
-+  static GreedyInterval* _end;          // sentinel (interval with only range GreedyRange::end())
++  static Interval* _end;          // sentinel (interval with only range Range::end())
 +
 +  int              _reg_num;
 +  BasicType        _type;         // valid only for virtual registers
-+  GreedyRange*           _first;        // sorted list of GreedyRanges
++  Range*           _first;        // sorted list of Ranges
 +  intStack         _use_pos_and_kinds; // sorted list of use-positions and their according use-kinds
 +
-+  GreedyRange*           _current;      // interval iteration: the current GreedyRange
-+  GreedyInterval*        _next;         // interval iteration: sorted list of GreedyIntervals (ends with sentinel)
-+  GreedyIntervalState    _state;        // interval iteration: to which set belongs this interval
++  Range*           _current;      // interval iteration: the current Range
++  Interval*        _next;         // interval iteration: sorted list of Intervals (ends with sentinel)
++  IntervalState    _state;        // interval iteration: to which set belongs this interval
 +
 +
 +  int              _assigned_reg;
@@ -8739,23 +8752,23 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  LIR_Opr          _cached_opr;
 +  VMReg            _cached_vm_reg;
 +
-+  GreedyInterval*        _split_parent;           // the original interval where this interval is derived from
-+  GreedyIntervalList     _split_children;         // list of all intervals that are split off from this interval (only available for split parents)
-+  GreedyInterval*        _current_split_child;    // the current split child that has been active or inactive last (always stored in split parents)
++  Interval*        _split_parent;           // the original interval where this interval is derived from
++  IntervalList     _split_children;         // list of all intervals that are split off from this interval (only available for split parents)
++  Interval*        _current_split_child;    // the current split child that has been active or inactive last (always stored in split parents)
 +
 +  int              _canonical_spill_slot;   // the stack slot where all split parts of this interval are spilled to (always stored in split parents)
 +  bool             _insert_move_when_activated; // true if move is inserted between _current_split_child and this interval when interval gets active the first time
-+  GreedyIntervalSpillState _spill_state;          // for spill move optimization
++  IntervalSpillState _spill_state;          // for spill move optimization
 +  int              _spill_definition_pos;   // position where the interval is defined (if defined only once)
-+  GreedyInterval*        _register_hint;          // this interval should be in the same register as the hint interval
++  Interval*        _register_hint;          // this interval should be in the same register as the hint interval
 +
 +  int              calc_to();
-+  GreedyInterval*        new_split_child();
++  Interval*        new_split_child();
 + public:
-+  GreedyInterval(int reg_num);
++  Interval(int reg_num);
 +
 +  static void      initialize(Arena* arena);
-+  static GreedyInterval* end()                         { return _end; }
++  static Interval* end()                         { return _end; }
 +
 +  // accessors
 +  int              reg_num() const               { return _reg_num; }
@@ -8763,48 +8776,48 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  BasicType        type() const                  { assert(_reg_num == -1 || _reg_num >= LIR_OprDesc::vreg_base, "cannot access type for fixed interval"); return _type; }
 +  void             set_type(BasicType type)      { assert(_reg_num < LIR_OprDesc::vreg_base || _type == T_ILLEGAL || _type == type, "overwriting existing type"); _type = type; }
 +
-+  GreedyRange*           first() const                 { return _first; }
++  Range*           first() const                 { return _first; }
 +  int              from() const                  { return _first->from(); }
 +  int              to()                          { if (_cached_to == -1) _cached_to = calc_to(); assert(_cached_to == calc_to(), "invalid cached value"); return _cached_to; }
 +  int              num_use_positions() const     { return _use_pos_and_kinds.length() / 2; }
 +
-+  GreedyInterval*        next() const                  { return _next; }
-+  GreedyInterval**       next_addr()                   { return &_next; }
-+  void             set_next(GreedyInterval* next)      { _next = next; }
++  Interval*        next() const                  { return _next; }
++  Interval**       next_addr()                   { return &_next; }
++  void             set_next(Interval* next)      { _next = next; }
 +
 +  int              assigned_reg() const          { return _assigned_reg; }
 +  int              assigned_regHi() const        { return _assigned_regHi; }
 +  void             assign_reg(int reg)           { _assigned_reg = reg; _assigned_regHi = Greedy::any_reg; }
 +  void             assign_reg(int reg,int regHi) { _assigned_reg = reg; _assigned_regHi = regHi; }
 +
-+  GreedyInterval*        register_hint(bool search_split_child = true) const; // calculation needed
-+  void             set_register_hint(GreedyInterval* i) { _register_hint = i; }
++  Interval*        register_hint(bool search_split_child = true) const; // calculation needed
++  void             set_register_hint(Interval* i) { _register_hint = i; }
 +
 +  int              state() const                 { return _state; }
-+  void             set_state(GreedyIntervalState s)    { _state = s; }
++  void             set_state(IntervalState s)    { _state = s; }
 +
 +  // access to split parent and split children
 +  bool             is_split_parent() const       { return _split_parent == this; }
 +  bool             is_split_child() const        { return _split_parent != this; }
-+  GreedyInterval*        split_parent() const          { assert(_split_parent->is_split_parent(), "must be"); return _split_parent; }
-+  GreedyInterval*        split_child_at_op_id(int op_id, LIR_OpVisitState::OprMode mode);
-+  GreedyInterval*        split_child_before_op_id(int op_id);
++  Interval*        split_parent() const          { assert(_split_parent->is_split_parent(), "must be"); return _split_parent; }
++  Interval*        split_child_at_op_id(int op_id, LIR_OpVisitState::OprMode mode);
++  Interval*        split_child_before_op_id(int op_id);
 +  bool             split_child_covers(int op_id, LIR_OpVisitState::OprMode mode);
 +  DEBUG_ONLY(void  check_split_children();)
 +
 +  // information stored in split parent, but available for all children
 +  int              canonical_spill_slot() const            { return split_parent()->_canonical_spill_slot; }
 +  void             set_canonical_spill_slot(int slot)      { assert(split_parent()->_canonical_spill_slot == -1, "overwriting existing value"); split_parent()->_canonical_spill_slot = slot; }
-+  GreedyInterval*        current_split_child() const             { return split_parent()->_current_split_child; }
++  Interval*        current_split_child() const             { return split_parent()->_current_split_child; }
 +  void             make_current_split_child()              { split_parent()->_current_split_child = this; }
 +
 +  bool             insert_move_when_activated() const      { return _insert_move_when_activated; }
 +  void             set_insert_move_when_activated(bool b)  { _insert_move_when_activated = b; }
 +
 +  // for spill optimization
-+  GreedyIntervalSpillState spill_state() const         { return split_parent()->_spill_state; }
++  IntervalSpillState spill_state() const         { return split_parent()->_spill_state; }
 +  int              spill_definition_pos() const  { return split_parent()->_spill_definition_pos; }
-+  void             set_spill_state(GreedyIntervalSpillState state) {  assert(state >= spill_state(), "state cannot decrease"); split_parent()->_spill_state = state; }
++  void             set_spill_state(IntervalSpillState state) {  assert(state >= spill_state(), "state cannot decrease"); split_parent()->_spill_state = state; }
 +  void             set_spill_definition_pos(int pos) { assert(spill_definition_pos() == -1, "cannot set the position twice"); split_parent()->_spill_definition_pos = pos; }
 +  // returns true if this interval has a shadow copy on the stack that is always correct
 +  bool             always_in_memory() const      { return split_parent()->_spill_state == storeAtDefinition || split_parent()->_spill_state == startInMemory; }
@@ -8816,50 +8829,50 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  void             set_cached_vm_reg(VMReg reg)  { _cached_vm_reg = reg; }
 +
 +  // access to use positions
-+  int    first_usage(GreedyIntervalUseKind min_use_kind) const;           // id of the first operation requiring this interval in a register
-+  int    next_usage(GreedyIntervalUseKind min_use_kind, int from) const;  // id of next usage seen from the given position
-+  int    next_usage_exact(GreedyIntervalUseKind exact_use_kind, int from) const;
-+  int    previous_usage(GreedyIntervalUseKind min_use_kind, int from) const;
++  int    first_usage(IntervalUseKind min_use_kind) const;           // id of the first operation requiring this interval in a register
++  int    next_usage(IntervalUseKind min_use_kind, int from) const;  // id of next usage seen from the given position
++  int    next_usage_exact(IntervalUseKind exact_use_kind, int from) const;
++  int    previous_usage(IntervalUseKind min_use_kind, int from) const;
 +
 +  // manipulating intervals
-+  void   add_use_pos(int pos, GreedyIntervalUseKind use_kind);
++  void   add_use_pos(int pos, IntervalUseKind use_kind);
 +  void   add_range(int from, int to);
-+  GreedyInterval* split(int split_pos);
-+  GreedyInterval* split_from_start(int split_pos);
++  Interval* split(int split_pos);
++  Interval* split_from_start(int split_pos);
 +  void remove_first_use_pos()                    { _use_pos_and_kinds.truncate(_use_pos_and_kinds.length() - 2); }
 +
 +  // test intersection
 +  bool   covers(int op_id, LIR_OpVisitState::OprMode mode) const;
 +  bool   has_hole_between(int from, int to);
-+  bool   intersects(GreedyInterval* i) const           { return _first->intersects(i->_first); }
-+  int    intersects_at(GreedyInterval* i) const        { return _first->intersects_at(i->_first); }
++  bool   intersects(Interval* i) const           { return _first->intersects(i->_first); }
++  int    intersects_at(Interval* i) const        { return _first->intersects_at(i->_first); }
 +
 +  // range iteration
 +  void   rewind_range()                          { _current = _first; }
 +  void   next_range()                            { assert(this != _end, "not allowed on sentinel"); _current = _current->next(); }
 +  int    current_from() const                    { return _current->from(); }
 +  int    current_to() const                      { return _current->to(); }
-+  bool   current_at_end() const                  { return _current == GreedyRange::end(); }
-+  bool   current_intersects(GreedyInterval* it)        { return _current->intersects(it->_current); };
-+  int    current_intersects_at(GreedyInterval* it)     { return _current->intersects_at(it->_current); };
++  bool   current_at_end() const                  { return _current == Range::end(); }
++  bool   current_intersects(Interval* it)        { return _current->intersects(it->_current); };
++  int    current_intersects_at(Interval* it)     { return _current->intersects_at(it->_current); };
 +
 +  // printing
 +  void print(outputStream* out = tty) const      PRODUCT_RETURN;
 +};
 +
 +
-+class GreedyIntervalWalker : public CompilationResourceObj {
++class IntervalWalker : public CompilationResourceObj {
 + protected:
 +  Compilation*     _compilation;
 +  Greedy*      _allocator;
 +
-+  GreedyInterval*        _unhandled_first[nofKinds];  // sorted list of intervals, not life before the current position
-+  GreedyInterval*        _active_first   [nofKinds];  // sorted list of intervals, life at the current position
-+  GreedyInterval*        _inactive_first [nofKinds];  // sorted list of intervals, intervals in a life time hole at the current position
++  Interval*        _unhandled_first[nofKinds];  // sorted list of intervals, not life before the current position
++  Interval*        _active_first   [nofKinds];  // sorted list of intervals, life at the current position
++  Interval*        _inactive_first [nofKinds];  // sorted list of intervals, intervals in a life time hole at the current position
 +
-+  GreedyInterval*        _current;                     // the current interval coming from unhandled list
++  Interval*        _current;                     // the current interval coming from unhandled list
 +  int              _current_position;            // the current position (intercept point through the intervals)
-+  GreedyIntervalKind     _current_kind;                // and whether it is fixed_kind or any_kind.
++  IntervalKind     _current_kind;                // and whether it is fixed_kind or any_kind.
 +
 +
 +  Compilation*     compilation() const               { return _compilation; }
@@ -8869,24 +8882,24 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +  void             bailout(const char* msg) const    { compilation()->bailout(msg); }
 +  bool             bailed_out() const                { return compilation()->bailed_out(); }
 +
-+  void check_bounds(GreedyIntervalKind kind) { assert(kind >= fixedKind && kind <= anyKind, "invalid interval_kind"); }
++  void check_bounds(IntervalKind kind) { assert(kind >= fixedKind && kind <= anyKind, "invalid interval_kind"); }
 +
-+  GreedyInterval** unhandled_first_addr(GreedyIntervalKind kind) { check_bounds(kind); return &_unhandled_first[kind]; }
-+  GreedyInterval** active_first_addr(GreedyIntervalKind kind)    { check_bounds(kind); return &_active_first[kind]; }
-+  GreedyInterval** inactive_first_addr(GreedyIntervalKind kind)  { check_bounds(kind); return &_inactive_first[kind]; }
++  Interval** unhandled_first_addr(IntervalKind kind) { check_bounds(kind); return &_unhandled_first[kind]; }
++  Interval** active_first_addr(IntervalKind kind)    { check_bounds(kind); return &_active_first[kind]; }
++  Interval** inactive_first_addr(IntervalKind kind)  { check_bounds(kind); return &_inactive_first[kind]; }
 +
-+  void append_unsorted(GreedyInterval** first, GreedyInterval* interval);
-+  void append_sorted(GreedyInterval** first, GreedyInterval* interval);
-+  void append_to_unhandled(GreedyInterval** list, GreedyInterval* interval);
++  void append_unsorted(Interval** first, Interval* interval);
++  void append_sorted(Interval** first, Interval* interval);
++  void append_to_unhandled(Interval** list, Interval* interval);
 +
-+  bool remove_from_list(GreedyInterval** list, GreedyInterval* i);
-+  void remove_from_list(GreedyInterval* i);
++  bool remove_from_list(Interval** list, Interval* i);
++  void remove_from_list(Interval* i);
 +
 +  void next_interval();
-+  GreedyInterval*        current() const               { return _current; }
-+  GreedyIntervalKind     current_kind() const          { return _current_kind; }
++  Interval*        current() const               { return _current; }
++  IntervalKind     current_kind() const          { return _current_kind; }
 +
-+  void walk_to(GreedyIntervalState state, int from);
++  void walk_to(IntervalState state, int from);
 +
 +  // activate_current() is called when an unhandled interval becomes active (in current(), current_kind()).
 +  // Return false if current() should not be moved the the active interval list.
@@ -8895,14 +8908,14 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +  // interval_moved() is called whenever an interval moves from one interval list to another.
 +  // In the implementation of this method it is prohibited to move the interval to any list.
-+  virtual void interval_moved(GreedyInterval* interval, GreedyIntervalKind kind, GreedyIntervalState from, GreedyIntervalState to);
++  virtual void interval_moved(Interval* interval, IntervalKind kind, IntervalState from, IntervalState to);
 +
 + public:
-+  GreedyIntervalWalker(Greedy* allocator, GreedyInterval* unhandled_fixed_first, GreedyInterval* unhandled_any_first);
++  IntervalWalker(Greedy* allocator, Interval* unhandled_fixed_first, Interval* unhandled_any_first);
 +
-+  GreedyInterval* unhandled_first(GreedyIntervalKind kind)   { check_bounds(kind); return _unhandled_first[kind]; }
-+  GreedyInterval* active_first(GreedyIntervalKind kind)      { check_bounds(kind); return _active_first[kind]; }
-+  GreedyInterval* inactive_first(GreedyIntervalKind kind)    { check_bounds(kind); return _inactive_first[kind]; }
++  Interval* unhandled_first(IntervalKind kind)   { check_bounds(kind); return _unhandled_first[kind]; }
++  Interval* active_first(IntervalKind kind)      { check_bounds(kind); return _active_first[kind]; }
++  Interval* inactive_first(IntervalKind kind)    { check_bounds(kind); return _inactive_first[kind]; }
 +
 +  // active contains the intervals that are live after the lir_op
 +  void walk_to(int lir_op_id);
@@ -8916,7 +8929,7 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +
 +// The actual greedy register allocator
-+class GreedyWalker : public GreedyIntervalWalker {
++class GreedyWalker : public IntervalWalker {
 +  enum {
 +    any_reg = Greedy::any_reg
 +  };
@@ -8929,9 +8942,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +  int              _use_pos[Greedy::nof_regs];
 +  int              _block_pos[Greedy::nof_regs];
-+  GreedyIntervalList*    _spill_intervals[Greedy::nof_regs];
++  IntervalList*    _spill_intervals[Greedy::nof_regs];
 +
-+  GreedyMoveResolver     _move_resolver;   // for ordering spill moves
++  MoveResolver     _move_resolver;   // for ordering spill moves
 +
 +  // accessors mapped to same functions in class Greedy
 +  int         block_count() const      { return allocator()->block_count(); }
@@ -8940,53 +8953,53 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +
 +  void init_use_lists(bool only_process_use_pos);
 +  void exclude_from_use(int reg);
-+  void exclude_from_use(GreedyInterval* i);
-+  void set_use_pos(int reg, GreedyInterval* i, int use_pos, bool only_process_use_pos);
-+  void set_use_pos(GreedyInterval* i, int use_pos, bool only_process_use_pos);
-+  void set_block_pos(int reg, GreedyInterval* i, int block_pos);
-+  void set_block_pos(GreedyInterval* i, int block_pos);
++  void exclude_from_use(Interval* i);
++  void set_use_pos(int reg, Interval* i, int use_pos, bool only_process_use_pos);
++  void set_use_pos(Interval* i, int use_pos, bool only_process_use_pos);
++  void set_block_pos(int reg, Interval* i, int block_pos);
++  void set_block_pos(Interval* i, int block_pos);
 +
 +  void free_exclude_active_fixed();
 +  void free_exclude_active_any();
-+  void free_collect_inactive_fixed(GreedyInterval* cur);
-+  void free_collect_inactive_any(GreedyInterval* cur);
-+  void free_collect_unhandled(GreedyIntervalKind kind, GreedyInterval* cur);
++  void free_collect_inactive_fixed(Interval* cur);
++  void free_collect_inactive_any(Interval* cur);
++  void free_collect_unhandled(IntervalKind kind, Interval* cur);
 +  void spill_exclude_active_fixed();
-+  void spill_block_unhandled_fixed(GreedyInterval* cur);
-+  void spill_block_inactive_fixed(GreedyInterval* cur);
++  void spill_block_unhandled_fixed(Interval* cur);
++  void spill_block_inactive_fixed(Interval* cur);
 +  void spill_collect_active_any();
-+  void spill_collect_inactive_any(GreedyInterval* cur);
++  void spill_collect_inactive_any(Interval* cur);
 +
-+  void insert_move(int op_id, GreedyInterval* src_it, GreedyInterval* dst_it);
++  void insert_move(int op_id, Interval* src_it, Interval* dst_it);
 +  int  find_optimal_split_pos(BlockBegin* min_block, BlockBegin* max_block, int max_split_pos);
-+  int  find_optimal_split_pos(GreedyInterval* it, int min_split_pos, int max_split_pos, bool do_loop_optimization);
-+  void split_before_usage(GreedyInterval* it, int min_split_pos, int max_split_pos);
-+  void split_for_spilling(GreedyInterval* it);
-+  void split_stack_interval(GreedyInterval* it);
-+  void split_when_partial_register_available(GreedyInterval* it, int register_available_until);
-+  void split_and_spill_interval(GreedyInterval* it);
++  int  find_optimal_split_pos(Interval* it, int min_split_pos, int max_split_pos, bool do_loop_optimization);
++  void split_before_usage(Interval* it, int min_split_pos, int max_split_pos);
++  void split_for_spilling(Interval* it);
++  void split_stack_interval(Interval* it);
++  void split_when_partial_register_available(Interval* it, int register_available_until);
++  void split_and_spill_interval(Interval* it);
 +
 +  int  find_free_reg(int reg_needed_until, int interval_to, int hint_reg, int ignore_reg, bool* need_split);
 +  int  find_free_double_reg(int reg_needed_until, int interval_to, int hint_reg, bool* need_split);
-+  bool alloc_free_reg(GreedyInterval* cur);
++  bool alloc_free_reg(Interval* cur);
 +
 +  int  find_locked_reg(int reg_needed_until, int interval_to, int hint_reg, int ignore_reg, bool* need_split);
 +  int  find_locked_double_reg(int reg_needed_until, int interval_to, int hint_reg, bool* need_split);
 +  void split_and_spill_intersecting_intervals(int reg, int regHi);
-+  void alloc_locked_reg(GreedyInterval* cur);
++  void alloc_locked_reg(Interval* cur);
 +
-+  bool no_allocation_possible(GreedyInterval* cur);
++  bool no_allocation_possible(Interval* cur);
 +  void update_phys_reg_range(bool requires_cpu_register);
-+  void init_vars_for_alloc(GreedyInterval* cur);
-+  bool pd_init_regs_for_alloc(GreedyInterval* cur);
++  void init_vars_for_alloc(Interval* cur);
++  bool pd_init_regs_for_alloc(Interval* cur);
 +
-+  void combine_spilled_intervals(GreedyInterval* cur);
-+  bool is_move(LIR_Op* op, GreedyInterval* from, GreedyInterval* to);
++  void combine_spilled_intervals(Interval* cur);
++  bool is_move(LIR_Op* op, Interval* from, Interval* to);
 +
 +  bool activate_current();
 +
 + public:
-+  GreedyWalker(Greedy* allocator, GreedyInterval* unhandled_fixed_first, GreedyInterval* unhandled_any_first);
++  GreedyWalker(Greedy* allocator, Interval* unhandled_fixed_first, Interval* unhandled_any_first);
 +
 +  // must be called when all intervals are allocated
 +  void             finish_allocation()           { _move_resolver.resolve_and_append_moves(); }
@@ -9194,15 +9207,17 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Greedy.hpp
 +#endif
 +
 +
++} // end namespace greedy
++
 +#endif // SHARE_VM_C1_C1_GREEDY_HPP
-diff -r 555c45b3456e src/share/vm/c1/c1_IR.hpp
---- a/src/share/vm/c1/c1_IR.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_IR.hpp	Sat Mar 24 12:06:20 2018 +0800
+diff -r 33a61051088d src/share/vm/c1/c1_IR.hpp
+--- a/src/share/vm/c1/c1_IR.hpp	Sat Mar 24 12:18:54 2018 +0800
++++ b/src/share/vm/c1/c1_IR.hpp	Sat Mar 24 20:57:05 2018 +0800
 @@ -247,6 +247,7 @@
  
  class CodeEmitInfo: public CompilationResourceObj {
    friend class LinearScan;
-+  friend class Greedy;
++  friend class greedy::Greedy;
   private:
    IRScopeDebugInfo* _scope_debug_info;
    IRScope*          _scope;
@@ -9221,9 +9236,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_IR.hpp
  
    // debugging
    static void print(BlockBegin* start, bool cfg_only, bool live_only = false) PRODUCT_RETURN;
-diff -r 555c45b3456e src/share/vm/c1/c1_Instruction.hpp
---- a/src/share/vm/c1/c1_Instruction.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_Instruction.hpp	Sat Mar 24 12:06:20 2018 +0800
+diff -r 33a61051088d src/share/vm/c1/c1_Instruction.hpp
+--- a/src/share/vm/c1/c1_Instruction.hpp	Sat Mar 24 12:18:54 2018 +0800
++++ b/src/share/vm/c1/c1_Instruction.hpp	Sat Mar 24 20:57:05 2018 +0800
 @@ -1607,6 +1607,7 @@
    int        _bci;                               // start-bci of block
    int        _depth_first_number;                // number of this block in a depth-first ordering
@@ -9267,9 +9282,9 @@ diff -r 555c45b3456e src/share/vm/c1/c1_Instruction.hpp
    };
  
    void set(Flag f)                               { _flags |= f; }
-diff -r 555c45b3456e src/share/vm/c1/c1_globals.hpp
---- a/src/share/vm/c1/c1_globals.hpp	Sat Mar 24 11:03:39 2018 +0800
-+++ b/src/share/vm/c1/c1_globals.hpp	Sat Mar 24 12:06:20 2018 +0800
+diff -r 33a61051088d src/share/vm/c1/c1_globals.hpp
+--- a/src/share/vm/c1/c1_globals.hpp	Sat Mar 24 12:18:54 2018 +0800
++++ b/src/share/vm/c1/c1_globals.hpp	Sat Mar 24 20:57:05 2018 +0800
 @@ -227,6 +227,21 @@
                                                                              \
    develop(bool, CountLinearScan, false,                                     \
