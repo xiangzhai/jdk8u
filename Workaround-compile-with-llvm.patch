@@ -1,0 +1,21 @@
+diff -r 2ac43ad19b54 common/autoconf/generated-configure.sh
+--- a/common/autoconf/generated-configure.sh	Thu Jul 19 14:03:08 2018 +0800
++++ b/common/autoconf/generated-configure.sh	Thu Jul 19 15:10:03 2018 +0800
+@@ -19464,7 +19464,7 @@
+     # Do not probe for cc on AIX.
+     COMPILER_CHECK_LIST="xlc_r"
+   else
+-    COMPILER_CHECK_LIST="gcc cc"
++    COMPILER_CHECK_LIST="clang gcc cc"
+   fi
+ 
+ 
+@@ -21066,7 +21066,7 @@
+     # Do not probe for CC on AIX .
+     COMPILER_CHECK_LIST="xlC_r"
+   else
+-    COMPILER_CHECK_LIST="g++ CC"
++    COMPILER_CHECK_LIST="clang++ g++ CC"
+   fi
+ 
+ 
