@@ -1,6 +1,6 @@
 diff -r 2ac43ad19b54 common/autoconf/generated-configure.sh
 --- a/common/autoconf/generated-configure.sh	Thu Jul 19 14:03:08 2018 +0800
-+++ b/common/autoconf/generated-configure.sh	Thu Jul 19 16:37:46 2018 +0800
++++ b/common/autoconf/generated-configure.sh	Thu Jul 19 19:17:45 2018 +0800
 @@ -19464,7 +19464,7 @@
      # Do not probe for cc on AIX.
      COMPILER_CHECK_LIST="xlc_r"
@@ -21,7 +21,7 @@ diff -r 2ac43ad19b54 common/autoconf/generated-configure.sh
  
 diff -r 2ac43ad19b54 hotspot/make/linux/makefiles/adlc.make
 --- a/hotspot/make/linux/makefiles/adlc.make	Thu Jul 19 14:03:08 2018 +0800
-+++ b/hotspot/make/linux/makefiles/adlc.make	Thu Jul 19 16:37:46 2018 +0800
++++ b/hotspot/make/linux/makefiles/adlc.make	Thu Jul 19 19:17:45 2018 +0800
 @@ -107,7 +107,7 @@
  
  $(EXEC) : $(OBJECTS)
@@ -31,3 +31,15 @@ diff -r 2ac43ad19b54 hotspot/make/linux/makefiles/adlc.make
  
  # Random dependencies:
  $(OBJECTS): opcodes.hpp classes.hpp adlc.hpp adlcVMDeps.hpp adlparse.hpp archDesc.hpp arena.hpp dict2.hpp filebuff.hpp forms.hpp formsopt.hpp formssel.hpp
+diff -r 2ac43ad19b54 hotspot/src/share/vm/opto/lcm.cpp
+--- a/hotspot/src/share/vm/opto/lcm.cpp	Thu Jul 19 14:03:08 2018 +0800
++++ b/hotspot/src/share/vm/opto/lcm.cpp	Thu Jul 19 19:17:45 2018 +0800
+@@ -57,7 +57,7 @@
+ // Check whether val is not-null-decoded compressed oop,
+ // i.e. will grab into the base of the heap if it represents NULL.
+ static bool accesses_heap_base_zone(Node *val) {
+-  if (Universe::narrow_oop_base() > 0) { // Implies UseCompressedOops.
++  if (Universe::narrow_oop_base()) { // Implies UseCompressedOops.
+     if (val && val->is_Mach()) {
+       if (val->as_Mach()->ideal_Opcode() == Op_DecodeN) {
+         // This assumes all Decodes with TypePtr::NotNull are matched to nodes that
