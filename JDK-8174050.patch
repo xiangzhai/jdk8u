@@ -1,0 +1,36 @@
+diff -r 2ac43ad19b54 hotspot/src/share/vm/opto/lcm.cpp
+--- a/hotspot/src/share/vm/opto/lcm.cpp	Thu Jul 19 14:03:08 2018 +0800
++++ b/hotspot/src/share/vm/opto/lcm.cpp	Thu Jul 19 20:39:18 2018 +0800
+@@ -57,7 +57,7 @@
+ // Check whether val is not-null-decoded compressed oop,
+ // i.e. will grab into the base of the heap if it represents NULL.
+ static bool accesses_heap_base_zone(Node *val) {
+-  if (Universe::narrow_oop_base() > 0) { // Implies UseCompressedOops.
++  if (Universe::narrow_oop_base() != NULL) { // Implies UseCompressedOops.
+     if (val && val->is_Mach()) {
+       if (val->as_Mach()->ideal_Opcode() == Op_DecodeN) {
+         // This assumes all Decodes with TypePtr::NotNull are matched to nodes that
+diff -r 2ac43ad19b54 hotspot/src/share/vm/opto/loopPredicate.cpp
+--- a/hotspot/src/share/vm/opto/loopPredicate.cpp	Thu Jul 19 14:03:08 2018 +0800
++++ b/hotspot/src/share/vm/opto/loopPredicate.cpp	Thu Jul 19 20:39:18 2018 +0800
+@@ -869,7 +869,7 @@
+       Node*          idx    = cmp->in(1);
+       assert(!invar.is_invariant(idx), "index is variant");
+       Node* rng = cmp->in(2);
+-      assert(rng->Opcode() == Op_LoadRange || _igvn.type(rng)->is_int() >= 0, "must be");
++      assert(rng->Opcode() == Op_LoadRange || iff->is_RangeCheck() || _igvn.type(rng)->is_int()->_lo >= 0, "must be");
+       assert(invar.is_invariant(rng), "range must be invariant");
+       int scale    = 1;
+       Node* offset = zero;
+diff -r 2ac43ad19b54 hotspot/src/share/vm/runtime/virtualspace.cpp
+--- a/hotspot/src/share/vm/runtime/virtualspace.cpp	Thu Jul 19 14:03:08 2018 +0800
++++ b/hotspot/src/share/vm/runtime/virtualspace.cpp	Thu Jul 19 20:39:18 2018 +0800
+@@ -358,7 +358,7 @@
+                 (UseCompressedOops && (Universe::narrow_oop_base() != NULL) &&
+                  Universe::narrow_oop_use_implicit_null_checks()) ?
+                   lcm(os::vm_page_size(), alignment) : 0) {
+-  if (base() > 0) {
++  if (base() != NULL) {
+     MemTracker::record_virtual_memory_type((address)base(), mtJavaHeap);
+   }
+ 
