@@ -1,0 +1,39 @@
+diff --git a/Workaround-compile-with-llvm.patch b/Workaround-compile-with-llvm.patch
+new file mode 100644
+index 0000000..dac0c86
+--- /dev/null
++++ b/Workaround-compile-with-llvm.patch
+@@ -0,0 +1,33 @@
++diff -r 2ac43ad19b54 common/autoconf/generated-configure.sh
++--- a/common/autoconf/generated-configure.sh	Thu Jul 19 14:03:08 2018 +0800
+++++ b/common/autoconf/generated-configure.sh	Thu Jul 19 20:42:16 2018 +0800
++@@ -19464,7 +19464,7 @@
++     # Do not probe for cc on AIX.
++     COMPILER_CHECK_LIST="xlc_r"
++   else
++-    COMPILER_CHECK_LIST="gcc cc"
+++    COMPILER_CHECK_LIST="clang gcc cc"
++   fi
++ 
++ 
++@@ -21066,7 +21066,7 @@
++     # Do not probe for CC on AIX .
++     COMPILER_CHECK_LIST="xlC_r"
++   else
++-    COMPILER_CHECK_LIST="g++ CC"
+++    COMPILER_CHECK_LIST="clang++ g++ CC"
++   fi
++ 
++ 
++diff -r 2ac43ad19b54 hotspot/make/linux/makefiles/adlc.make
++--- a/hotspot/make/linux/makefiles/adlc.make	Thu Jul 19 14:03:08 2018 +0800
+++++ b/hotspot/make/linux/makefiles/adlc.make	Thu Jul 19 20:42:16 2018 +0800
++@@ -107,7 +107,7 @@
++ 
++ $(EXEC) : $(OBJECTS)
++ 	@echo Making adlc
++-	$(QUIETLY) $(filter-out $(ARCHFLAG),$(HOST.LINK_NOPROF.CXX)) -o $(EXEC) $(OBJECTS)
+++	$(QUIETLY) $(filter-out $(ARCHFLAG),$(HOST.LINK_NOPROF.CXX)) -o $(EXEC) $(OBJECTS) -lstdc++
++ 
++ # Random dependencies:
++ $(OBJECTS): opcodes.hpp classes.hpp adlc.hpp adlcVMDeps.hpp adlparse.hpp archDesc.hpp arena.hpp dict2.hpp filebuff.hpp forms.hpp formsopt.hpp formssel.hpp
