@@ -1,6 +1,6 @@
-diff -r 2ac43ad19b54 common/autoconf/generated-configure.sh
---- a/common/autoconf/generated-configure.sh	Thu Jul 19 14:03:08 2018 +0800
-+++ b/common/autoconf/generated-configure.sh	Thu Jul 19 20:42:16 2018 +0800
+diff -r 1a87e769fb7f common/autoconf/generated-configure.sh
+--- a/common/autoconf/generated-configure.sh	Mon Sep 03 18:02:35 2018 +0800
++++ b/common/autoconf/generated-configure.sh	Tue Sep 04 20:37:24 2018 +0800
 @@ -19464,7 +19464,7 @@
      # Do not probe for cc on AIX.
      COMPILER_CHECK_LIST="xlc_r"
@@ -19,9 +19,9 @@ diff -r 2ac43ad19b54 common/autoconf/generated-configure.sh
    fi
  
  
-diff -r 2ac43ad19b54 hotspot/make/linux/makefiles/adlc.make
---- a/hotspot/make/linux/makefiles/adlc.make	Thu Jul 19 14:03:08 2018 +0800
-+++ b/hotspot/make/linux/makefiles/adlc.make	Thu Jul 19 20:42:16 2018 +0800
+diff -r 1a87e769fb7f hotspot/make/linux/makefiles/adlc.make
+--- a/hotspot/make/linux/makefiles/adlc.make	Mon Sep 03 18:02:35 2018 +0800
++++ b/hotspot/make/linux/makefiles/adlc.make	Tue Sep 04 20:37:24 2018 +0800
 @@ -107,7 +107,7 @@
  
  $(EXEC) : $(OBJECTS)
@@ -31,3 +31,26 @@ diff -r 2ac43ad19b54 hotspot/make/linux/makefiles/adlc.make
  
  # Random dependencies:
  $(OBJECTS): opcodes.hpp classes.hpp adlc.hpp adlcVMDeps.hpp adlparse.hpp archDesc.hpp arena.hpp dict2.hpp filebuff.hpp forms.hpp formsopt.hpp formssel.hpp
+diff -r 1a87e769fb7f hotspot/make/linux/makefiles/jsig.make
+--- a/hotspot/make/linux/makefiles/jsig.make	Mon Sep 03 18:02:35 2018 +0800
++++ b/hotspot/make/linux/makefiles/jsig.make	Tue Sep 04 20:37:24 2018 +0800
+@@ -54,7 +54,7 @@
+ $(LIBJSIG): $(JSIGSRCDIR)/jsig.c $(LIBJSIG_MAPFILE)
+ 	@echo Making signal interposition lib...
+ 	$(QUIETLY) $(CC) $(SYMFLAG) $(ARCHFLAG) $(SHARED_FLAG) $(PICFLAG) \
+-                         $(LFLAGS_JSIG) $(JSIG_DEBUG_CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -ldl
++                         $(LFLAGS_JSIG) $(JSIG_DEBUG_CFLAGS) $(EXTRA_CFLAGS) -fintegrated-as -o $@ $< -ldl
+ ifeq ($(ENABLE_FULL_DEBUG_SYMBOLS),1)
+ 	$(QUIETLY) $(OBJCOPY) --only-keep-debug $@ $(LIBJSIG_DEBUGINFO)
+ 	$(QUIETLY) $(OBJCOPY) --add-gnu-debuglink=$(LIBJSIG_DEBUGINFO) $@
+diff -r 1a87e769fb7f hotspot/make/linux/makefiles/saproc.make
+--- a/hotspot/make/linux/makefiles/saproc.make	Mon Sep 03 18:02:35 2018 +0800
++++ b/hotspot/make/linux/makefiles/saproc.make	Tue Sep 04 20:37:24 2018 +0800
+@@ -119,6 +119,7 @@
+ 	           $(SA_LFLAGS)                                         \
+ 	           $(SA_DEBUG_CFLAGS)                                   \
+ 	           $(EXTRA_CFLAGS)                                      \
++                   -fintegrated-as                                      \
+ 	           -o $@                                                \
+ 	           -lthread_db
+ endif
