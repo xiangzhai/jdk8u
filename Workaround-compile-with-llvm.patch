@@ -1,6 +1,6 @@
 diff -r 1a87e769fb7f common/autoconf/generated-configure.sh
 --- a/common/autoconf/generated-configure.sh	Mon Sep 03 18:02:35 2018 +0800
-+++ b/common/autoconf/generated-configure.sh	Wed Sep 05 11:27:37 2018 +0800
++++ b/common/autoconf/generated-configure.sh	Wed Sep 05 15:53:22 2018 +0800
 @@ -3923,7 +3923,7 @@
  #CUSTOM_AUTOCONF_INCLUDE
  
@@ -10,6 +10,24 @@ diff -r 1a87e769fb7f common/autoconf/generated-configure.sh
  
  ###############################################################################
  #
+@@ -20423,7 +20423,7 @@
+   else
+     COMPILER_VERSION_TEST=`$COMPILER --version 2>&1 | $HEAD -n 1`
+     # Check that this is likely to be GCC.
+-    $COMPILER --version 2>&1 | $GREP "Free Software Foundation" > /dev/null
++    $COMPILER --version 2>&1 | $GREP "clang" > /dev/null
+     if test $? -ne 0; then
+       { $as_echo "$as_me:${as_lineno-$LINENO}: The $COMPILER_NAME compiler (located as $COMPILER) does not seem to be the required GCC compiler." >&5
+ $as_echo "$as_me: The $COMPILER_NAME compiler (located as $COMPILER) does not seem to be the required GCC compiler." >&6;}
+@@ -22025,7 +22025,7 @@
+   else
+     COMPILER_VERSION_TEST=`$COMPILER --version 2>&1 | $HEAD -n 1`
+     # Check that this is likely to be GCC.
+-    $COMPILER --version 2>&1 | $GREP "Free Software Foundation" > /dev/null
++    $COMPILER --version 2>&1 | $GREP "clang" > /dev/null
+     if test $? -ne 0; then
+       { $as_echo "$as_me:${as_lineno-$LINENO}: The $COMPILER_NAME compiler (located as $COMPILER) does not seem to be the required GCC compiler." >&5
+ $as_echo "$as_me: The $COMPILER_NAME compiler (located as $COMPILER) does not seem to be the required GCC compiler." >&6;}
 @@ -29802,7 +29802,7 @@
        COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS $COMMON_CCXXFLAGS_JDK -W -Wall -Wno-unused -Wno-parentheses \
        -pipe \
@@ -21,7 +39,7 @@ diff -r 1a87e769fb7f common/autoconf/generated-configure.sh
  $as_echo_n "checking if the C++ compiler supports \"$CXXSTD_CXXFLAG $CFLAGS_WARNINGS_ARE_ERRORS\"... " >&6; }
 diff -r 1a87e769fb7f common/autoconf/toolchain.m4
 --- a/common/autoconf/toolchain.m4	Mon Sep 03 18:02:35 2018 +0800
-+++ b/common/autoconf/toolchain.m4	Wed Sep 05 11:27:37 2018 +0800
++++ b/common/autoconf/toolchain.m4	Wed Sep 05 15:53:22 2018 +0800
 @@ -1021,7 +1021,7 @@
        COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS $COMMON_CCXXFLAGS_JDK -W -Wall -Wno-unused -Wno-parentheses \
        -pipe \
@@ -33,7 +51,7 @@ diff -r 1a87e769fb7f common/autoconf/toolchain.m4
        CXXFLAGS_JDK="${CXXFLAGS_JDK} ${CXXSTD_CXXFLAG}"
 diff -r 1a87e769fb7f hotspot/make/linux/makefiles/adlc.make
 --- a/hotspot/make/linux/makefiles/adlc.make	Mon Sep 03 18:02:35 2018 +0800
-+++ b/hotspot/make/linux/makefiles/adlc.make	Wed Sep 05 11:27:37 2018 +0800
++++ b/hotspot/make/linux/makefiles/adlc.make	Wed Sep 05 15:53:22 2018 +0800
 @@ -59,7 +59,7 @@
  INCLUDES += $(Src_Dirs_I:%=-I%)
  
@@ -54,7 +72,7 @@ diff -r 1a87e769fb7f hotspot/make/linux/makefiles/adlc.make
  $(OBJECTS): opcodes.hpp classes.hpp adlc.hpp adlcVMDeps.hpp adlparse.hpp archDesc.hpp arena.hpp dict2.hpp filebuff.hpp forms.hpp formsopt.hpp formssel.hpp
 diff -r 1a87e769fb7f hotspot/make/linux/makefiles/jsig.make
 --- a/hotspot/make/linux/makefiles/jsig.make	Mon Sep 03 18:02:35 2018 +0800
-+++ b/hotspot/make/linux/makefiles/jsig.make	Wed Sep 05 11:27:37 2018 +0800
++++ b/hotspot/make/linux/makefiles/jsig.make	Wed Sep 05 15:53:22 2018 +0800
 @@ -54,7 +54,7 @@
  $(LIBJSIG): $(JSIGSRCDIR)/jsig.c $(LIBJSIG_MAPFILE)
  	@echo Making signal interposition lib...
@@ -66,7 +84,7 @@ diff -r 1a87e769fb7f hotspot/make/linux/makefiles/jsig.make
  	$(QUIETLY) $(OBJCOPY) --add-gnu-debuglink=$(LIBJSIG_DEBUGINFO) $@
 diff -r 1a87e769fb7f hotspot/make/linux/makefiles/saproc.make
 --- a/hotspot/make/linux/makefiles/saproc.make	Mon Sep 03 18:02:35 2018 +0800
-+++ b/hotspot/make/linux/makefiles/saproc.make	Wed Sep 05 11:27:37 2018 +0800
++++ b/hotspot/make/linux/makefiles/saproc.make	Wed Sep 05 15:53:22 2018 +0800
 @@ -118,7 +118,7 @@
  	           $(SASRCFILES)                                        \
  	           $(SA_LFLAGS)                                         \
@@ -78,7 +96,7 @@ diff -r 1a87e769fb7f hotspot/make/linux/makefiles/saproc.make
  endif
 diff -r 1a87e769fb7f make/common/NativeCompilation.gmk
 --- a/make/common/NativeCompilation.gmk	Mon Sep 03 18:02:35 2018 +0800
-+++ b/make/common/NativeCompilation.gmk	Wed Sep 05 11:27:37 2018 +0800
++++ b/make/common/NativeCompilation.gmk	Wed Sep 05 15:53:22 2018 +0800
 @@ -55,7 +55,7 @@
  
    ifneq (,$$(filter %.c,$2))
