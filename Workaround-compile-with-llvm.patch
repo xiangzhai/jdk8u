@@ -1,27 +1,48 @@
 diff -r 1a87e769fb7f common/autoconf/generated-configure.sh
 --- a/common/autoconf/generated-configure.sh	Mon Sep 03 18:02:35 2018 +0800
-+++ b/common/autoconf/generated-configure.sh	Tue Sep 04 20:37:24 2018 +0800
-@@ -19464,7 +19464,7 @@
-     # Do not probe for cc on AIX.
-     COMPILER_CHECK_LIST="xlc_r"
-   else
--    COMPILER_CHECK_LIST="gcc cc"
-+    COMPILER_CHECK_LIST="clang gcc cc"
-   fi
++++ b/common/autoconf/generated-configure.sh	Wed Sep 05 11:27:37 2018 +0800
+@@ -3923,7 +3923,7 @@
+ #CUSTOM_AUTOCONF_INCLUDE
  
+ # Do not change or remove the following line, it is needed for consistency checks:
+-DATE_WHEN_GENERATED=1528356500
++DATE_WHEN_GENERATED=1536112210
  
-@@ -21066,7 +21066,7 @@
-     # Do not probe for CC on AIX .
-     COMPILER_CHECK_LIST="xlC_r"
-   else
--    COMPILER_CHECK_LIST="g++ CC"
-+    COMPILER_CHECK_LIST="clang++ g++ CC"
-   fi
+ ###############################################################################
+ #
+@@ -29802,7 +29802,7 @@
+       COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS $COMMON_CCXXFLAGS_JDK -W -Wall -Wno-unused -Wno-parentheses \
+       -pipe \
+       -D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE"
+-      CXXSTD_CXXFLAG="-std=gnu++98"
++      CXXSTD_CXXFLAG="-std=gnu++98 -fintegrated-as"
  
- 
+   { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C++ compiler supports \"$CXXSTD_CXXFLAG $CFLAGS_WARNINGS_ARE_ERRORS\"" >&5
+ $as_echo_n "checking if the C++ compiler supports \"$CXXSTD_CXXFLAG $CFLAGS_WARNINGS_ARE_ERRORS\"... " >&6; }
+diff -r 1a87e769fb7f common/autoconf/toolchain.m4
+--- a/common/autoconf/toolchain.m4	Mon Sep 03 18:02:35 2018 +0800
++++ b/common/autoconf/toolchain.m4	Wed Sep 05 11:27:37 2018 +0800
+@@ -1021,7 +1021,7 @@
+       COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS $COMMON_CCXXFLAGS_JDK -W -Wall -Wno-unused -Wno-parentheses \
+       -pipe \
+       -D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE"
+-      CXXSTD_CXXFLAG="-std=gnu++98"
++      CXXSTD_CXXFLAG="-std=gnu++98 -fintegrated-as"
+       TOOLCHAIN_CXX_COMPILER_CHECK_ARGUMENTS([$CXXSTD_CXXFLAG $CFLAGS_WARNINGS_ARE_ERRORS],
+     					     [], [CXXSTD_CXXFLAG=""])
+       CXXFLAGS_JDK="${CXXFLAGS_JDK} ${CXXSTD_CXXFLAG}"
 diff -r 1a87e769fb7f hotspot/make/linux/makefiles/adlc.make
 --- a/hotspot/make/linux/makefiles/adlc.make	Mon Sep 03 18:02:35 2018 +0800
-+++ b/hotspot/make/linux/makefiles/adlc.make	Tue Sep 04 20:37:24 2018 +0800
++++ b/hotspot/make/linux/makefiles/adlc.make	Wed Sep 05 11:27:37 2018 +0800
+@@ -59,7 +59,7 @@
+ INCLUDES += $(Src_Dirs_I:%=-I%)
+ 
+ # set flags for adlc compilation
+-CXXFLAGS = $(SYSDEFS) $(INCLUDES)
++CXXFLAGS = $(SYSDEFS) $(INCLUDES) -fintegrated-as
+ 
+ # Force assertions on.
+ CXXFLAGS += -DASSERT
 @@ -107,7 +107,7 @@
  
  $(EXEC) : $(OBJECTS)
@@ -33,24 +54,37 @@ diff -r 1a87e769fb7f hotspot/make/linux/makefiles/adlc.make
  $(OBJECTS): opcodes.hpp classes.hpp adlc.hpp adlcVMDeps.hpp adlparse.hpp archDesc.hpp arena.hpp dict2.hpp filebuff.hpp forms.hpp formsopt.hpp formssel.hpp
 diff -r 1a87e769fb7f hotspot/make/linux/makefiles/jsig.make
 --- a/hotspot/make/linux/makefiles/jsig.make	Mon Sep 03 18:02:35 2018 +0800
-+++ b/hotspot/make/linux/makefiles/jsig.make	Tue Sep 04 20:37:24 2018 +0800
++++ b/hotspot/make/linux/makefiles/jsig.make	Wed Sep 05 11:27:37 2018 +0800
 @@ -54,7 +54,7 @@
  $(LIBJSIG): $(JSIGSRCDIR)/jsig.c $(LIBJSIG_MAPFILE)
  	@echo Making signal interposition lib...
  	$(QUIETLY) $(CC) $(SYMFLAG) $(ARCHFLAG) $(SHARED_FLAG) $(PICFLAG) \
 -                         $(LFLAGS_JSIG) $(JSIG_DEBUG_CFLAGS) $(EXTRA_CFLAGS) -o $@ $< -ldl
-+                         $(LFLAGS_JSIG) $(JSIG_DEBUG_CFLAGS) $(EXTRA_CFLAGS) -fintegrated-as -o $@ $< -ldl
++                         $(LFLAGS_JSIG) $(JSIG_DEBUG_CFLAGS) -fintegrated-as -o $@ $< -ldl
  ifeq ($(ENABLE_FULL_DEBUG_SYMBOLS),1)
  	$(QUIETLY) $(OBJCOPY) --only-keep-debug $@ $(LIBJSIG_DEBUGINFO)
  	$(QUIETLY) $(OBJCOPY) --add-gnu-debuglink=$(LIBJSIG_DEBUGINFO) $@
 diff -r 1a87e769fb7f hotspot/make/linux/makefiles/saproc.make
 --- a/hotspot/make/linux/makefiles/saproc.make	Mon Sep 03 18:02:35 2018 +0800
-+++ b/hotspot/make/linux/makefiles/saproc.make	Tue Sep 04 20:37:24 2018 +0800
-@@ -119,6 +119,7 @@
++++ b/hotspot/make/linux/makefiles/saproc.make	Wed Sep 05 11:27:37 2018 +0800
+@@ -118,7 +118,7 @@
+ 	           $(SASRCFILES)                                        \
  	           $(SA_LFLAGS)                                         \
  	           $(SA_DEBUG_CFLAGS)                                   \
- 	           $(EXTRA_CFLAGS)                                      \
+-	           $(EXTRA_CFLAGS)                                      \
 +                   -fintegrated-as                                      \
  	           -o $@                                                \
  	           -lthread_db
  endif
+diff -r 1a87e769fb7f make/common/NativeCompilation.gmk
+--- a/make/common/NativeCompilation.gmk	Mon Sep 03 18:02:35 2018 +0800
++++ b/make/common/NativeCompilation.gmk	Wed Sep 05 11:27:37 2018 +0800
+@@ -55,7 +55,7 @@
+ 
+   ifneq (,$$(filter %.c,$2))
+     # Compile as a C file
+-    $1_$2_FLAGS=$4 $$($1_$(notdir $2)_CFLAGS) -DTHIS_FILE='"$$(<F)"' -c
++    $1_$2_FLAGS=$4 $$($1_$(notdir $2)_CFLAGS) -DTHIS_FILE='"$$(<F)"' -fintegrated-as -c
+     $1_$2_COMP=$5
+     $1_$2_DEP_FLAG:=$(C_FLAG_DEPS)
+   else ifneq (,$$(filter %.m,$2))
