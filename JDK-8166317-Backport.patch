@@ -1,0 +1,188 @@
+diff -r 16b9bbfaa450 src/share/vm/code/codeBlob.hpp
+--- a/src/share/vm/code/codeBlob.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/code/codeBlob.hpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -135,6 +135,13 @@
+   int content_size() const                       { return           content_end()    -           content_begin();    }
+   int code_size() const                          { return           code_end()       -           code_begin();       }
+   int data_size() const                          { return           data_end()       -           data_begin();       }
++  // Only used from CodeCache::free_unused_tail() after the Interpreter blob was trimmed
++  void adjust_size(size_t used) {
++    _size = (int)used;
++    _data_offset = (int)used;
++    _code_end = (address)this + used;
++    _data_end = (address)this + used;
++  }
+ 
+   // Containment
+   bool blob_contains(address addr) const         { return header_begin()       <= addr && addr < data_end();       }
+diff -r 16b9bbfaa450 src/share/vm/code/codeCache.cpp
+--- a/src/share/vm/code/codeCache.cpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/code/codeCache.cpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -227,6 +227,22 @@
+ }
+ 
+ 
++void CodeCache::free_unused_tail(CodeBlob* cb, size_t used) {
++  assert_locked_or_safepoint(CodeCache_lock);
++  guarantee(cb->is_buffer_blob() && strncmp("Interpreter", cb->name(), 11) == 0, "Only possible for interpreter!");
++  print_trace("free_unused_tail", cb);
++
++  // We also have to account for the extra space (i.e. header) used by the CodeBlob
++  // which provides the memory (see BufferBlob::create() in codeBlob.cpp).
++  used += CodeBlob::align_code_offset(cb->header_size());
++
++  // Get heap for given CodeBlob and deallocate its unused tail
++  get_code_heap(cb)->deallocate_tail(cb, used);
++  // Adjust the sizes of the CodeBlob
++  cb->adjust_size(used);
++}
++
++
+ void CodeCache::commit(CodeBlob* cb) {
+   // this is called by nmethod::nmethod, which must already own CodeCache_lock
+   assert_locked_or_safepoint(CodeCache_lock);
+diff -r 16b9bbfaa450 src/share/vm/code/codeCache.hpp
+--- a/src/share/vm/code/codeCache.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/code/codeCache.hpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -78,6 +78,7 @@
+   static int alignment_unit();                      // guaranteed alignment of all CodeBlobs
+   static int alignment_offset();                    // guaranteed offset of first CodeBlob byte within alignment unit (i.e., allocation header)
+   static void free(CodeBlob* cb);                   // frees a CodeBlob
++  static void free_unused_tail(CodeBlob* cb, size_t used); // frees the unused tail of a CodeBlob (only used by TemplateInterpreter::initialize())
+   static void flush();                              // flushes all CodeBlobs
+   static bool contains(void *p);                    // returns whether p is included
+   static void blobs_do(void f(CodeBlob* cb));       // iterates over all CodeBlobs
+diff -r 16b9bbfaa450 src/share/vm/code/stubs.cpp
+--- a/src/share/vm/code/stubs.cpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/code/stubs.cpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -24,6 +24,7 @@
+ 
+ #include "precompiled.hpp"
+ #include "code/codeBlob.hpp"
++#include "code/codeCache.hpp"
+ #include "code/stubs.hpp"
+ #include "memory/allocation.inline.hpp"
+ #include "oops/oop.inline.hpp"
+@@ -89,6 +90,15 @@
+ }
+ 
+ 
++void StubQueue::deallocate_unused_tail() {
++  CodeBlob* blob = CodeCache::find_blob((void*)_stub_buffer);
++  CodeCache::free_unused_tail(blob, used_space());
++  // Update the limits to the new, trimmed CodeBlob size
++  _buffer_size = blob->content_size();
++  _buffer_limit = blob->content_size();
++}
++
++
+ Stub* StubQueue::stub_containing(address pc) const {
+   if (contains(pc)) {
+     for (Stub* s = first(); s != NULL; s = next(s)) {
+diff -r 16b9bbfaa450 src/share/vm/code/stubs.hpp
+--- a/src/share/vm/code/stubs.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/code/stubs.hpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -216,12 +216,15 @@
+   void  remove_first(int n);                     // remove the first n stubs in the queue
+   void  remove_all();                            // remove all stubs in the queue
+ 
++  void deallocate_unused_tail();                 // deallocate the unused tail of the underlying CodeBlob
++                                                 // only used from TemplateInterpreter::initialize()
+   // Iteration
+   static void queues_do(void f(StubQueue* s));   // call f with each StubQueue
+   void  stubs_do(void f(Stub* s));               // call f with all stubs
+   Stub* first() const                            { return number_of_stubs() > 0 ? stub_at(_queue_begin) : NULL; }
+   Stub* next(Stub* s) const                      { int i = index_of(s) + stub_size(s);
+-                                                   if (i == _buffer_limit) i = 0;
++                                                   // Only wrap around in the non-contiguous case (see stubss.cpp)
++                                                   if (i == _buffer_limit && _queue_end < _buffer_limit) i = 0;
+                                                    return (i == _queue_end) ? NULL : stub_at(i);
+                                                  }
+ 
+diff -r 16b9bbfaa450 src/share/vm/interpreter/templateInterpreter.cpp
+--- a/src/share/vm/interpreter/templateInterpreter.cpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/interpreter/templateInterpreter.cpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -50,6 +50,8 @@
+     _code = new StubQueue(new InterpreterCodeletInterface, code_size, NULL,
+                           "Interpreter");
+     InterpreterGenerator g(_code);
++    // Free the unused memory not occupied by the interpreter and the stubs
++    _code->deallocate_unused_tail();
+     if (PrintInterpreter) print();
+   }
+ 
+diff -r 16b9bbfaa450 src/share/vm/memory/heap.cpp
+--- a/src/share/vm/memory/heap.cpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/memory/heap.cpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -227,6 +227,22 @@
+ }
+ 
+ 
++void CodeHeap::deallocate_tail(void* p, size_t used_size) {
++  assert(p == find_start(p), "illegal deallocation");
++  // Find start of HeapBlock
++  HeapBlock* b = (((HeapBlock *)p) - 1);
++  assert(b->allocated_space() == p, "sanity check");
++  size_t used_number_of_segments = size_to_segments(used_size + header_size());
++  size_t actual_number_of_segments = b->length();
++  guarantee(used_number_of_segments <= actual_number_of_segments, "Must be!");
++  guarantee(b == block_at(_next_segment - actual_number_of_segments), "Intermediate allocation!");
++  size_t number_of_segments_to_deallocate = actual_number_of_segments - used_number_of_segments;
++  _next_segment -= number_of_segments_to_deallocate;
++  mark_segmap_as_free(_next_segment, _next_segment + number_of_segments_to_deallocate);
++  b->initialize(used_number_of_segments);
++}
++
++
+ void CodeHeap::deallocate(void* p) {
+   assert(p == find_start(p), "illegal deallocation");
+   // Find start of HeapBlock
+diff -r 16b9bbfaa450 src/share/vm/memory/heap.hpp
+--- a/src/share/vm/memory/heap.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/memory/heap.hpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -134,6 +134,12 @@
+   // Memory allocation
+   void* allocate  (size_t size, bool is_critical);  // allocates a block of size or returns NULL
+   void  deallocate(void* p);                     // deallocates a block
++  // Free the tail of segments allocated by the last call to 'allocate()' which exceed 'used_size'.
++  // ATTENTION: this is only safe to use if there was no other call to 'allocate()' after
++  //            'p' was allocated. Only intended for freeing memory which would be otherwise
++  //            wasted after the interpreter generation because we don't know the interpreter size
++  //            beforehand and we also can't easily relocate the interpreter to a new location.
++  void  deallocate_tail(void* p, size_t used_size);
+ 
+   // Attributes
+   char* low_boundary() const                     { return _memory.low_boundary (); }
+diff -r 16b9bbfaa450 src/share/vm/runtime/init.cpp
+--- a/src/share/vm/runtime/init.cpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/runtime/init.cpp	Sat Sep 15 23:24:18 2018 +0800
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -54,6 +54,10 @@
+ void os_init_globals();        // depends on VM_Version_init, before universe_init
+ void stubRoutines_init1();
+ jint universe_init();          // depends on codeCache_init and stubRoutines_init
++#if INCLUDE_ALL_GCS
++// depends on universe_init, must be before interpreter_init (currently only on SPARC)
++void g1_barrier_stubs_init() NOT_SPARC({});
++#endif
+ void interpreter_init();       // before any methods loaded
+ void invocationCounter_init(); // before any methods loaded
+ void marksweep_init();
+@@ -106,7 +110,10 @@
+   if (status != JNI_OK)
+     return status;
+ 
+-  interpreter_init();  // before any methods loaded
++#if INCLUDE_ALL_GCS
++  g1_barrier_stubs_init();   // depends on universe_init, must be before interpreter_init
++#endif
++  interpreter_init();        // before any methods loaded
+   invocationCounter_init();  // before any methods loaded
+   marksweep_init();
+   accessFlags_init();
