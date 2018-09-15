@@ -1,6 +1,6 @@
-diff -r de8045923ad2 make/linux/makefiles/gcc.make
---- a/make/linux/makefiles/gcc.make	Mon Dec 18 18:18:10 2017 -0500
-+++ b/make/linux/makefiles/gcc.make	Tue Mar 13 23:34:53 2018 +0800
+diff -r de8045923ad2 hotspot/make/linux/makefiles/gcc.make
+--- a/hotspot/make/linux/makefiles/gcc.make	Mon Dec 18 18:18:10 2017 -0500
++++ b/hotspot/make/linux/makefiles/gcc.make	Tue Mar 13 23:34:53 2018 +0800
 @@ -197,7 +197,7 @@
  endif
  
