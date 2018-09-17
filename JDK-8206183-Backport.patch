@@ -1,6 +1,6 @@
 diff -r 16b9bbfaa450 src/share/vm/services/mallocSiteTable.cpp
 --- a/src/share/vm/services/mallocSiteTable.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/mallocSiteTable.cpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/services/mallocSiteTable.cpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -28,34 +28,10 @@
  #include "runtime/atomic.hpp"
  #include "services/mallocSiteTable.hpp"
@@ -97,7 +97,7 @@ diff -r 16b9bbfaa450 src/share/vm/services/mallocSiteTable.cpp
    }
 diff -r 16b9bbfaa450 src/share/vm/services/mallocSiteTable.hpp
 --- a/src/share/vm/services/mallocSiteTable.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/mallocSiteTable.hpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/services/mallocSiteTable.hpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -42,7 +42,7 @@
  
   public:
@@ -143,7 +143,7 @@ diff -r 16b9bbfaa450 src/share/vm/services/mallocSiteTable.hpp
  
 diff -r 16b9bbfaa450 src/share/vm/services/memTracker.cpp
 --- a/src/share/vm/services/memTracker.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/memTracker.cpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/services/memTracker.cpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -67,10 +67,6 @@
      os::unsetenv(buf);
    }
@@ -157,7 +157,7 @@ diff -r 16b9bbfaa450 src/share/vm/services/memTracker.cpp
      level = NMT_off;
 diff -r 16b9bbfaa450 src/share/vm/services/memTracker.hpp
 --- a/src/share/vm/services/memTracker.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/memTracker.hpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/services/memTracker.hpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -31,8 +31,8 @@
  
  #if !INCLUDE_NMT
@@ -183,7 +183,7 @@ diff -r 16b9bbfaa450 src/share/vm/services/memTracker.hpp
  class Mutex;
 diff -r 16b9bbfaa450 src/share/vm/services/virtualMemoryTracker.cpp
 --- a/src/share/vm/services/virtualMemoryTracker.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/virtualMemoryTracker.cpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/services/virtualMemoryTracker.cpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -167,7 +167,7 @@
            // higher part
            address high_base = addr + sz;
@@ -195,7 +195,7 @@ diff -r 16b9bbfaa450 src/share/vm/services/virtualMemoryTracker.cpp
            return false;
 diff -r 16b9bbfaa450 src/share/vm/services/virtualMemoryTracker.hpp
 --- a/src/share/vm/services/virtualMemoryTracker.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/virtualMemoryTracker.hpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/services/virtualMemoryTracker.hpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -305,7 +305,7 @@
  
  
@@ -207,7 +207,7 @@ diff -r 16b9bbfaa450 src/share/vm/services/virtualMemoryTracker.hpp
    // Copy constructor
 diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.cpp
 --- a/src/share/vm/utilities/nativeCallStack.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/utilities/nativeCallStack.cpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/utilities/nativeCallStack.cpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -27,8 +27,6 @@
  #include "utilities/globalDefinitions.hpp"
  #include "utilities/nativeCallStack.hpp"
@@ -219,7 +219,7 @@ diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.cpp
  
 diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.hpp
 --- a/src/share/vm/utilities/nativeCallStack.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/utilities/nativeCallStack.hpp	Sat Sep 15 21:02:47 2018 +0800
++++ b/src/share/vm/utilities/nativeCallStack.hpp	Mon Sep 17 21:44:58 2018 +0800
 @@ -52,9 +52,6 @@
   *    from it.
   */

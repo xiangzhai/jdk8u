@@ -1,0 +1,12 @@
+diff -r 16b9bbfaa450 src/os_cpu/linux_x86/vm/os_linux_x86.cpp
+--- a/src/os_cpu/linux_x86/vm/os_linux_x86.cpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/os_cpu/linux_x86/vm/os_linux_x86.cpp	Mon Sep 17 21:54:24 2018 +0800
+@@ -878,7 +878,7 @@
+ 
+ #ifndef PRODUCT
+ void os::verify_stack_alignment() {
+-#ifdef AMD64
++#if defined(AMD64) && !defined(__clang__)
+   assert(((intptr_t)os::current_stack_pointer() & (StackAlignmentInBytes-1)) == 0, "incorrect stack alignment");
+ #endif
+ }
