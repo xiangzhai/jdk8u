@@ -1,6 +1,6 @@
-diff -r 16b9bbfaa450 src/cpu/sparc/vm/macroAssembler_sparc.cpp
---- a/src/cpu/sparc/vm/macroAssembler_sparc.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/cpu/sparc/vm/macroAssembler_sparc.cpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/cpu/sparc/vm/macroAssembler_sparc.cpp
+--- a/hotspot/src/cpu/sparc/vm/macroAssembler_sparc.cpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/cpu/sparc/vm/macroAssembler_sparc.cpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -3642,32 +3642,6 @@
  #undef __
  }
@@ -106,29 +106,10 @@ diff -r 16b9bbfaa450 src/cpu/sparc/vm/macroAssembler_sparc.cpp
  #endif // INCLUDE_ALL_GCS
  ///////////////////////////////////////////////////////////////////////////////////
  
-diff -r 16b9bbfaa450 src/cpu/x86/vm/macroAssembler_x86.cpp
---- a/src/cpu/x86/vm/macroAssembler_x86.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/cpu/x86/vm/macroAssembler_x86.cpp	Sun Sep 16 12:33:46 2018 +0800
-@@ -4326,6 +4326,15 @@
-   bind(done);
- }
- 
-+// TODO: Unimplemented yet!
-+// Called from init_globals() after universe_init() and before interpreter_init()
-+void g1_barrier_stubs_init() {
-+  CollectedHeap* heap = Universe::heap();
-+  if (heap->kind() == CollectedHeap::G1CollectedHeap) {
-+    // Only needed for G1
-+  }
-+}
-+
- #endif // INCLUDE_ALL_GCS
- //////////////////////////////////////////////////////////////////////////////////
- 
-diff -r 16b9bbfaa450 src/share/vm/code/codeBlob.cpp
---- a/src/share/vm/code/codeBlob.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/code/codeBlob.cpp	Sun Sep 16 12:33:46 2018 +0800
-@@ -58,7 +58,7 @@
+diff -r 27d48c01c0cf hotspot/src/share/vm/code/codeBlob.cpp
+--- a/hotspot/src/share/vm/code/codeBlob.cpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/code/codeBlob.cpp	Mon Sep 17 10:57:24 2018 +0800
+@@ -67,7 +67,7 @@
  #include "c1/c1_Runtime1.hpp"
  #endif
  
@@ -137,9 +118,9 @@ diff -r 16b9bbfaa450 src/share/vm/code/codeBlob.cpp
    // align the size to CodeEntryAlignment
    return
      ((offset + (int)CodeHeap::header_size() + (CodeEntryAlignment-1)) & ~(CodeEntryAlignment-1))
-diff -r 16b9bbfaa450 src/share/vm/code/codeBlob.hpp
---- a/src/share/vm/code/codeBlob.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/code/codeBlob.hpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/code/codeBlob.hpp
+--- a/hotspot/src/share/vm/code/codeBlob.hpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/code/codeBlob.hpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -71,6 +71,7 @@
   public:
    // Returns the space needed for CodeBlob
@@ -160,18 +141,10 @@ diff -r 16b9bbfaa450 src/share/vm/code/codeBlob.hpp
  
    // Containment
    bool blob_contains(address addr) const         { return header_begin()       <= addr && addr < data_end();       }
-diff -r 16b9bbfaa450 src/share/vm/code/codeCache.cpp
---- a/src/share/vm/code/codeCache.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/code/codeCache.cpp	Sun Sep 16 12:33:46 2018 +0800
-@@ -116,6 +116,7 @@
-   }
- };
- 
-+
- // CodeCache implementation
- 
- CodeHeap * CodeCache::_heap = new CodeHeap();
-@@ -227,6 +228,22 @@
+diff -r 27d48c01c0cf hotspot/src/share/vm/code/codeCache.cpp
+--- a/hotspot/src/share/vm/code/codeCache.cpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/code/codeCache.cpp	Mon Sep 17 10:57:24 2018 +0800
+@@ -227,6 +227,23 @@
  }
  
  
@@ -185,7 +158,8 @@ diff -r 16b9bbfaa450 src/share/vm/code/codeCache.cpp
 +  used += CodeBlob::align_code_offset(cb->header_size());
 +
 +  // Get heap for given CodeBlob and deallocate its unused tail
-+  if (_heap) _heap->deallocate_tail(cb, used);
++  assert(_heap != NULL, "CodeHeap should not be NULL");
++  _heap->deallocate_tail(cb, used);
 +  // Adjust the sizes of the CodeBlob
 +  cb->adjust_size(used);
 +}
@@ -194,9 +168,9 @@ diff -r 16b9bbfaa450 src/share/vm/code/codeCache.cpp
  void CodeCache::commit(CodeBlob* cb) {
    // this is called by nmethod::nmethod, which must already own CodeCache_lock
    assert_locked_or_safepoint(CodeCache_lock);
-diff -r 16b9bbfaa450 src/share/vm/code/codeCache.hpp
---- a/src/share/vm/code/codeCache.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/code/codeCache.hpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/code/codeCache.hpp
+--- a/hotspot/src/share/vm/code/codeCache.hpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/code/codeCache.hpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -78,6 +78,7 @@
    static int alignment_unit();                      // guaranteed alignment of all CodeBlobs
    static int alignment_offset();                    // guaranteed offset of first CodeBlob byte within alignment unit (i.e., allocation header)
@@ -205,9 +179,9 @@ diff -r 16b9bbfaa450 src/share/vm/code/codeCache.hpp
    static void flush();                              // flushes all CodeBlobs
    static bool contains(void *p);                    // returns whether p is included
    static void blobs_do(void f(CodeBlob* cb));       // iterates over all CodeBlobs
-diff -r 16b9bbfaa450 src/share/vm/code/stubs.cpp
---- a/src/share/vm/code/stubs.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/code/stubs.cpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/code/stubs.cpp
+--- a/hotspot/src/share/vm/code/stubs.cpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/code/stubs.cpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -24,6 +24,7 @@
  
  #include "precompiled.hpp"
@@ -232,9 +206,9 @@ diff -r 16b9bbfaa450 src/share/vm/code/stubs.cpp
  Stub* StubQueue::stub_containing(address pc) const {
    if (contains(pc)) {
      for (Stub* s = first(); s != NULL; s = next(s)) {
-diff -r 16b9bbfaa450 src/share/vm/code/stubs.hpp
---- a/src/share/vm/code/stubs.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/code/stubs.hpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/code/stubs.hpp
+--- a/hotspot/src/share/vm/code/stubs.hpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/code/stubs.hpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -216,12 +216,15 @@
    void  remove_first(int n);                     // remove the first n stubs in the queue
    void  remove_all();                            // remove all stubs in the queue
@@ -252,9 +226,9 @@ diff -r 16b9bbfaa450 src/share/vm/code/stubs.hpp
                                                     return (i == _queue_end) ? NULL : stub_at(i);
                                                   }
  
-diff -r 16b9bbfaa450 src/share/vm/interpreter/templateInterpreter.cpp
---- a/src/share/vm/interpreter/templateInterpreter.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/interpreter/templateInterpreter.cpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/interpreter/templateInterpreter.cpp
+--- a/hotspot/src/share/vm/interpreter/templateInterpreter.cpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/interpreter/templateInterpreter.cpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -50,6 +50,8 @@
      _code = new StubQueue(new InterpreterCodeletInterface, code_size, NULL,
                            "Interpreter");
@@ -264,9 +238,9 @@ diff -r 16b9bbfaa450 src/share/vm/interpreter/templateInterpreter.cpp
      if (PrintInterpreter) print();
    }
  
-diff -r 16b9bbfaa450 src/share/vm/memory/heap.cpp
---- a/src/share/vm/memory/heap.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/memory/heap.cpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/memory/heap.cpp
+--- a/hotspot/src/share/vm/memory/heap.cpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/memory/heap.cpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -227,6 +227,22 @@
  }
  
@@ -290,9 +264,9 @@ diff -r 16b9bbfaa450 src/share/vm/memory/heap.cpp
  void CodeHeap::deallocate(void* p) {
    assert(p == find_start(p), "illegal deallocation");
    // Find start of HeapBlock
-diff -r 16b9bbfaa450 src/share/vm/memory/heap.hpp
---- a/src/share/vm/memory/heap.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/memory/heap.hpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/memory/heap.hpp
+--- a/hotspot/src/share/vm/memory/heap.hpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/memory/heap.hpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -134,6 +134,12 @@
    // Memory allocation
    void* allocate  (size_t size, bool is_critical);  // allocates a block of size or returns NULL
@@ -306,9 +280,9 @@ diff -r 16b9bbfaa450 src/share/vm/memory/heap.hpp
  
    // Attributes
    char* low_boundary() const                     { return _memory.low_boundary (); }
-diff -r 16b9bbfaa450 src/share/vm/runtime/init.cpp
---- a/src/share/vm/runtime/init.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/runtime/init.cpp	Sun Sep 16 12:33:46 2018 +0800
+diff -r 27d48c01c0cf hotspot/src/share/vm/runtime/init.cpp
+--- a/hotspot/src/share/vm/runtime/init.cpp	Fri Sep 14 16:39:43 2018 +0800
++++ b/hotspot/src/share/vm/runtime/init.cpp	Mon Sep 17 10:57:24 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
@@ -322,7 +296,7 @@ diff -r 16b9bbfaa450 src/share/vm/runtime/init.cpp
  jint universe_init();          // depends on codeCache_init and stubRoutines_init
 +#if INCLUDE_ALL_GCS
 +// depends on universe_init, must be before interpreter_init (currently only on SPARC)
-+#if defined(SPARC) || defined(X86) || defined(MIPS)
++#if defined(SPARC) || defined(MIPS)
 +void g1_barrier_stubs_init();
 +#else
 +void g1_barrier_stubs_init() {};
