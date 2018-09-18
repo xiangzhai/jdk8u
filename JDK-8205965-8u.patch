@@ -1,0 +1,133 @@
+diff -r 16b9bbfaa450 src/share/vm/services/mallocSiteTable.hpp
+--- a/src/share/vm/services/mallocSiteTable.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/services/mallocSiteTable.hpp	Tue Sep 18 09:44:29 2018 +0800
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -42,7 +42,7 @@
+ 
+  public:
+   MallocSite() :
+-    AllocationSite<MemoryCounter>(NativeCallStack::EMPTY_STACK), _flags(mtNone) {}
++    AllocationSite<MemoryCounter>(NativeCallStack::empty_stack()), _flags(mtNone) {}
+ 
+   MallocSite(const NativeCallStack& stack, MEMFLAGS flags) :
+     AllocationSite<MemoryCounter>(stack), _flags(flags) {}
+diff -r 16b9bbfaa450 src/share/vm/services/memTracker.hpp
+--- a/src/share/vm/services/memTracker.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/services/memTracker.hpp	Tue Sep 18 09:44:29 2018 +0800
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -31,8 +31,8 @@
+ 
+ #if !INCLUDE_NMT
+ 
+-#define CURRENT_PC   NativeCallStack::EMPTY_STACK
+-#define CALLER_PC    NativeCallStack::EMPTY_STACK
++#define CURRENT_PC   NativeCallStack::empty_stack()
++#define CALLER_PC    NativeCallStack::empty_stack()
+ 
+ class Tracker : public StackObj {
+  public:
+@@ -83,9 +83,9 @@
+ extern volatile bool NMT_stack_walkable;
+ 
+ #define CURRENT_PC ((MemTracker::tracking_level() == NMT_detail && NMT_stack_walkable) ? \
+-                    NativeCallStack(0, true) : NativeCallStack::EMPTY_STACK)
++                    NativeCallStack(0, true) : NativeCallStack::empty_stack())
+ #define CALLER_PC  ((MemTracker::tracking_level() == NMT_detail && NMT_stack_walkable) ?  \
+-                    NativeCallStack(1, true) : NativeCallStack::EMPTY_STACK)
++                    NativeCallStack(1, true) : NativeCallStack::empty_stack())
+ 
+ class MemBaseline;
+ class Mutex;
+diff -r 16b9bbfaa450 src/share/vm/services/virtualMemoryTracker.hpp
+--- a/src/share/vm/services/virtualMemoryTracker.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/services/virtualMemoryTracker.hpp	Tue Sep 18 09:44:29 2018 +0800
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2013, 2018, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -305,7 +305,7 @@
+ 
+ 
+   ReservedMemoryRegion(address base, size_t size) :
+-    VirtualMemoryRegion(base, size), _stack(NativeCallStack::EMPTY_STACK), _flag(mtNone),
++    VirtualMemoryRegion(base, size), _stack(NativeCallStack::empty_stack()), _flag(mtNone),
+     _all_committed(false) { }
+ 
+   // Copy constructor
+diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.cpp
+--- a/src/share/vm/utilities/nativeCallStack.cpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/utilities/nativeCallStack.cpp	Tue Sep 18 09:44:29 2018 +0800
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -27,7 +27,7 @@
+ #include "utilities/globalDefinitions.hpp"
+ #include "utilities/nativeCallStack.hpp"
+ 
+-const NativeCallStack NativeCallStack::EMPTY_STACK(0, false);
++NativeCallStack NativeCallStack::EMPTY_STACK(0, false);
+ 
+ NativeCallStack::NativeCallStack(int toSkip, bool fillStack) :
+   _hash_value(0) {
+@@ -114,4 +114,3 @@
+     }
+   }
+ }
+-
+diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.hpp
+--- a/src/share/vm/utilities/nativeCallStack.hpp	Fri Sep 14 07:58:22 2018 -0700
++++ b/src/share/vm/utilities/nativeCallStack.hpp	Tue Sep 18 09:44:29 2018 +0800
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+@@ -51,18 +51,23 @@
+  * 2. The class is strict stack object, no heap or virtual memory can be allocated
+  *    from it.
+  */
++class MemTracker;
++
+ class NativeCallStack : public StackObj {
+- public:
+-  static const NativeCallStack EMPTY_STACK;
++  friend class MemTracker;
+ 
+- private:
++private:
+   address       _stack[NMT_TrackingStackDepth];
+   unsigned int  _hash_value;
+ 
+- public:
++  static NativeCallStack EMPTY_STACK;
++public:
+   NativeCallStack(int toSkip = 0, bool fillStack = false);
+   NativeCallStack(address* pc, int frameCount);
+ 
++  static inline const NativeCallStack& empty_stack() {
++    return EMPTY_STACK;
++  }
+ 
+   // if it is an empty stack
+   inline bool is_empty() const {
