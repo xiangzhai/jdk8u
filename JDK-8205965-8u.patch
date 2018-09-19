@@ -1,6 +1,11 @@
-diff -r 16b9bbfaa450 src/share/vm/services/mallocSiteTable.hpp
+8205965: SIGSEGV on write to NativeCallStack::EMPTY_STACK
+Summary: Made EMPTY_STACK non-const, so it will not be placed in read-only BSS section.
+Reviewed-by: stuefe, martin
+Contributed-by: zhaixiang@loongson.cn
+
+diff -r 16b9bbfaa450 -r 87df128a79a9 src/share/vm/services/mallocSiteTable.hpp
 --- a/src/share/vm/services/mallocSiteTable.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/mallocSiteTable.hpp	Tue Sep 18 09:44:29 2018 +0800
++++ b/src/share/vm/services/mallocSiteTable.hpp	Wed Sep 19 11:22:48 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
@@ -17,9 +22,9 @@ diff -r 16b9bbfaa450 src/share/vm/services/mallocSiteTable.hpp
  
    MallocSite(const NativeCallStack& stack, MEMFLAGS flags) :
      AllocationSite<MemoryCounter>(stack), _flags(flags) {}
-diff -r 16b9bbfaa450 src/share/vm/services/memTracker.hpp
+diff -r 16b9bbfaa450 -r 87df128a79a9 src/share/vm/services/memTracker.hpp
 --- a/src/share/vm/services/memTracker.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/memTracker.hpp	Tue Sep 18 09:44:29 2018 +0800
++++ b/src/share/vm/services/memTracker.hpp	Wed Sep 19 11:22:48 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
@@ -50,9 +55,9 @@ diff -r 16b9bbfaa450 src/share/vm/services/memTracker.hpp
  
  class MemBaseline;
  class Mutex;
-diff -r 16b9bbfaa450 src/share/vm/services/virtualMemoryTracker.hpp
+diff -r 16b9bbfaa450 -r 87df128a79a9 src/share/vm/services/virtualMemoryTracker.hpp
 --- a/src/share/vm/services/virtualMemoryTracker.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/services/virtualMemoryTracker.hpp	Tue Sep 18 09:44:29 2018 +0800
++++ b/src/share/vm/services/virtualMemoryTracker.hpp	Wed Sep 19 11:22:48 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
@@ -69,9 +74,9 @@ diff -r 16b9bbfaa450 src/share/vm/services/virtualMemoryTracker.hpp
      _all_committed(false) { }
  
    // Copy constructor
-diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.cpp
+diff -r 16b9bbfaa450 -r 87df128a79a9 src/share/vm/utilities/nativeCallStack.cpp
 --- a/src/share/vm/utilities/nativeCallStack.cpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/utilities/nativeCallStack.cpp	Tue Sep 18 09:44:29 2018 +0800
++++ b/src/share/vm/utilities/nativeCallStack.cpp	Wed Sep 19 11:22:48 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
@@ -93,9 +98,9 @@ diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.cpp
    }
  }
 -
-diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.hpp
+diff -r 16b9bbfaa450 -r 87df128a79a9 src/share/vm/utilities/nativeCallStack.hpp
 --- a/src/share/vm/utilities/nativeCallStack.hpp	Fri Sep 14 07:58:22 2018 -0700
-+++ b/src/share/vm/utilities/nativeCallStack.hpp	Tue Sep 18 09:44:29 2018 +0800
++++ b/src/share/vm/utilities/nativeCallStack.hpp	Wed Sep 19 11:22:48 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
@@ -131,3 +136,4 @@ diff -r 16b9bbfaa450 src/share/vm/utilities/nativeCallStack.hpp
  
    // if it is an empty stack
    inline bool is_empty() const {
+
