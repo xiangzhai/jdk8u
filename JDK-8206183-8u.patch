@@ -1,6 +1,11 @@
-diff -r b7b998381089 src/share/vm/services/mallocSiteTable.cpp
---- a/src/share/vm/services/mallocSiteTable.cpp	Tue Sep 18 09:55:15 2018 +0800
-+++ b/src/share/vm/services/mallocSiteTable.cpp	Tue Sep 18 10:10:57 2018 +0800
+8206183: Possible construct EMPTY_STACK and allocation stack, etc. on first use
+Summary: Uses "construct on First Use Idiom" pattern to workaround static initialization order
+Reviewed-by: dholmes, minqi
+Contributed-by: zhaixiang@loongson.cn
+
+diff -r 7a6239517d46 src/share/vm/services/mallocSiteTable.cpp
+--- a/src/share/vm/services/mallocSiteTable.cpp	Wed Sep 19 19:48:12 2018 -0400
++++ b/src/share/vm/services/mallocSiteTable.cpp	Thu Sep 20 11:47:25 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
@@ -102,9 +107,9 @@ diff -r b7b998381089 src/share/vm/services/mallocSiteTable.cpp
        delete p;
      }
    }
-diff -r b7b998381089 src/share/vm/services/mallocSiteTable.hpp
---- a/src/share/vm/services/mallocSiteTable.hpp	Tue Sep 18 09:55:15 2018 +0800
-+++ b/src/share/vm/services/mallocSiteTable.hpp	Tue Sep 18 10:10:57 2018 +0800
+diff -r 7a6239517d46 src/share/vm/services/mallocSiteTable.hpp
+--- a/src/share/vm/services/mallocSiteTable.hpp	Wed Sep 19 19:48:12 2018 -0400
++++ b/src/share/vm/services/mallocSiteTable.hpp	Thu Sep 20 11:47:25 2018 +0800
 @@ -250,7 +250,13 @@
    }
  
@@ -139,9 +144,9 @@ diff -r b7b998381089 src/share/vm/services/mallocSiteTable.hpp
    NOT_PRODUCT(static int     _peak_count;)
  };
  
-diff -r b7b998381089 src/share/vm/services/memTracker.cpp
---- a/src/share/vm/services/memTracker.cpp	Tue Sep 18 09:55:15 2018 +0800
-+++ b/src/share/vm/services/memTracker.cpp	Tue Sep 18 10:10:57 2018 +0800
+diff -r 7a6239517d46 src/share/vm/services/memTracker.cpp
+--- a/src/share/vm/services/memTracker.cpp	Wed Sep 19 19:48:12 2018 -0400
++++ b/src/share/vm/services/memTracker.cpp	Thu Sep 20 11:47:25 2018 +0800
 @@ -1,5 +1,5 @@
  /*
 - * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
@@ -160,9 +165,9 @@ diff -r b7b998381089 src/share/vm/services/memTracker.cpp
    if (!MallocTracker::initialize(level) ||
        !VirtualMemoryTracker::initialize(level)) {
      level = NMT_off;
-diff -r b7b998381089 src/share/vm/utilities/nativeCallStack.cpp
---- a/src/share/vm/utilities/nativeCallStack.cpp	Tue Sep 18 09:55:15 2018 +0800
-+++ b/src/share/vm/utilities/nativeCallStack.cpp	Tue Sep 18 10:10:57 2018 +0800
+diff -r 7a6239517d46 src/share/vm/utilities/nativeCallStack.cpp
+--- a/src/share/vm/utilities/nativeCallStack.cpp	Wed Sep 19 19:48:12 2018 -0400
++++ b/src/share/vm/utilities/nativeCallStack.cpp	Thu Sep 20 11:47:25 2018 +0800
 @@ -27,8 +27,6 @@
  #include "utilities/globalDefinitions.hpp"
  #include "utilities/nativeCallStack.hpp"
@@ -172,9 +177,9 @@ diff -r b7b998381089 src/share/vm/utilities/nativeCallStack.cpp
  NativeCallStack::NativeCallStack(int toSkip, bool fillStack) :
    _hash_value(0) {
  
-diff -r b7b998381089 src/share/vm/utilities/nativeCallStack.hpp
---- a/src/share/vm/utilities/nativeCallStack.hpp	Tue Sep 18 09:55:15 2018 +0800
-+++ b/src/share/vm/utilities/nativeCallStack.hpp	Tue Sep 18 10:10:57 2018 +0800
+diff -r 7a6239517d46 src/share/vm/utilities/nativeCallStack.hpp
+--- a/src/share/vm/utilities/nativeCallStack.hpp	Wed Sep 19 19:48:12 2018 -0400
++++ b/src/share/vm/utilities/nativeCallStack.hpp	Thu Sep 20 11:47:25 2018 +0800
 @@ -54,18 +54,16 @@
  class MemTracker;
  
