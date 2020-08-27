@@ -1,7 +1,7 @@
 jdk8u-dev patch
 ---------------
 
-## Compile OpenJDK8 with LLVM for mips64el
+## Compile OpenJDK8 with LLVM
 
 ```
 export CC=clang
